@@ -1,0 +1,7 @@
+{
+  "indexes": [],
+  "fieldOverrides": [
+    { "collectionGroup": "sessions", "fieldPath": "expiresAt", "indexes": [{ "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }] },
+    { "collectionGroup": "rateLimits", "fieldPath": "expiresAt", "indexes": [] }
+  ]
+}

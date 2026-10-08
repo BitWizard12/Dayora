@@ -1,0 +1,34 @@
+services:
+  - type: web
+    name: dayora-api
+    runtime: node
+    buildCommand: npm ci --omit=dev
+    startCommand: npm run start:api
+    healthCheckPath: /api/health/ready
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: 22.20.0
+      - key: TRUST_PROXY
+        value: 1
+      - key: COOKIE_SAME_SITE
+        value: lax
+      - key: MAIL_MODE
+        value: smtp
+      - key: RATE_LIMIT_STORE
+        value: firestore
+      - key: FIREBASE_PROJECT_ID
+        sync: false
+      - key: FIREBASE_WEB_API_KEY
+        sync: false
+      - key: FIREBASE_SERVICE_ACCOUNT_JSON
+        sync: false
+      - key: FIREBASE_STORAGE_BUCKET
+        sync: false
+      - key: APP_ORIGIN
+        sync: false
+      - key: SMTP_URL
+        sync: false
+      - key: MAIL_FROM
+        sync: false

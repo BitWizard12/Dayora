@@ -1,0 +1,8 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // All application reads/writes go through authenticated Express repositories.
+    // Admin SDK bypasses rules: IAM and server ownership checks remain essential.
+    match /{document=**} { allow read, write: if false; }
+  }
+}

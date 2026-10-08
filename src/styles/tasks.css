@@ -1,0 +1,34 @@
+.task-filters { display:flex; flex-wrap:wrap; gap:10px; align-items:end; margin-bottom:20px; }
+.sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+.task-filters label { display:grid; gap:6px; font-size:11px; color:#697169; flex:1; min-width:120px; }
+.task-filters label:first-child { flex:2; min-width:200px; }
+.task-filters input,.task-filters select,.task-detail textarea { width:100%; border:1px solid #e4e9e1; border-radius:8px; padding:10px; background:white; color:#4d554e; font:inherit; }
+.task-title-button { text-align:left; background:none; border:0; width:100%; cursor:pointer; padding:0; }
+.task-drag { margin-left:auto; touch-action:none; }
+.task-complete { margin-left:auto; }
+.task-card--completed .task-title-button { text-decoration:line-through; color:#84917e; }
+.task-card--completed .task-complete { background:#e0ead9; color:#466047; }
+.task-column { min-height:190px; transition:background .18s; }
+.task-column--over { background:#e5edde; outline:1px solid #b4c6a8; }
+.task-card--overlay { box-shadow:0 12px 30px #23352330; padding:20px; }
+.task-project { font-size:10px; color:#81907a; margin:0 0 10px; }
+.task-progress { display:grid; gap:6px; font-size:10px; color:#81907a; margin-bottom:10px; }
+.task-progress progress,.subtasks progress { width:100%; height:6px; accent-color:#69835d; }
+.task-detail { max-height:75dvh; overflow-y:auto; }
+.subtasks { display:grid; gap:10px; }
+.subtasks-heading { display:flex; justify-content:space-between; font-size:11px; color:#697169; }
+.subtask-row,.subtask-add,.task-detail-actions { display:flex; gap:8px; align-items:center; }
+.subtask-row label { display:flex; flex:1; align-items:center; }
+.subtask-row input[type=checkbox] { width:16px; min-height:16px; accent-color:#69835d; }
+.subtask-row input:checked + span { text-decoration:line-through; }
+.subtask-add input { flex:1; min-width:0; }
+.subtask-add .button { flex-shrink:0; }
+.task-detail-actions { flex-wrap:wrap; }
+.button--danger { background:#a84f48; color:white; }
+.delete-confirm { display:flex; flex-wrap:wrap; gap:8px; font-size:12px; }
+.delete-confirm p { width:100%; }
+.priority--urgent { color:#a33d43; background:#fbe8e9; }
+.priority--urgent span { background:#a33d43; }
+.task-title-button:focus-visible,.task-drag:focus-visible,.task-filters :focus-visible { outline:2px solid #69835d; outline-offset:3px; }
+@media(max-width:600px) { .task-board { grid-template-columns:1fr; } .task-filters label:first-child { min-width:100%; } .task-toolbar { flex-wrap:wrap; gap:10px; } .task-card { padding:14px; } .task-card__title { font-size:12px; } }
+@media(prefers-reduced-motion:reduce) { .task-column,.task-card,progress { transition:none!important; } .task-card:hover { transform:none; } }

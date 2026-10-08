@@ -1,0 +1,7 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Backend validates upload bytes/size and serves private images after session verification.
+    match /{object=**} { allow read, write: if false; }
+  }
+}

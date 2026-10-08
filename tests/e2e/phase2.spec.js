@@ -1,0 +1,173 @@
+import { test, expect } from '@playwright/test'
+import { localScope, storageKey } from '../../src/repositories/createRepository.js'
+
+const keys = Object.fromEntries(['tasks', 'projects', 'events', 'time-entries'].map((collection) => [collection, storageKey(localScope, collection)]))
+
+test.beforeEach(async ({ page }) => {
+  if (test.info().title.startsWith('timer')) {
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await page.clock.setFixedTime(new Date('2026-10-06T06:00:00Z'))
+  }
+  await page.goto('/')
+  await expect(page.getByRole('heading', { name: 'Dashboard', exact: true })).toBeVisible()
+})
+
+const stat = (page, label) => page.locator('.stat-card').filter({ has: page.getByRole('heading', { name: label, exact: true }) }).locator('.stat-card__number')
+
+test('project create, details, edit, notifications, deletion and persistence', async ({ page }) => {
+  const errors = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await expect(stat(page, 'Total Projects')).toHaveAttribute('aria-label', '3')
+  await page.getByRole('button', { name: 'Add Project', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByLabel('Project name').fill('Phase 2 release')
+  await dialog.getByLabel('Description').fill('A real persistent project.')
+  await dialog.getByRole('combobox', { name: 'Status', exact: true }).selectOption('Pending')
+  await dialog.getByLabel('Deadline').fill('2026-10-20')
+  await dialog.getByRole('button', { name: 'Create project', exact: true }).click()
+  await expect(dialog).not.toBeVisible()
+  await expect(stat(page, 'Total Projects')).toHaveAttribute('aria-label', '4')
+  await expect(stat(page, 'Pending Projects')).toHaveAttribute('aria-label', '1')
+  await page.reload()
+  await page.locator('.project-open').filter({ hasText: 'Phase 2 release' }).click()
+  await expect(dialog).toContainText('A real persistent project.')
+  await dialog.getByRole('button', { name: 'Edit project' }).click()
+  await dialog.getByRole('combobox', { name: 'Status', exact: true }).selectOption('Completed')
+  await dialog.getByRole('button', { name: 'Save changes' }).click()
+  await expect(stat(page, 'Ended Projects')).toHaveAttribute('aria-label', '1')
+  await page.getByRole('button', { name: /^Notifications,/ }).click()
+  await page.locator('.notification-item').filter({ hasText: 'Project updated' }).first().click()
+  await expect(dialog).toBeVisible()
+  await dialog.getByRole('button', { name: 'Delete', exact: true }).click()
+  await dialog.getByRole('button', { name: 'Delete project', exact: true }).click()
+  await expect(stat(page, 'Total Projects')).toHaveAttribute('aria-label', '3')
+  await page.reload()
+  await expect(page.locator('.project-open').filter({ hasText: 'Phase 2 release' })).toHaveCount(0)
+  expect(errors).toEqual([])
+})
+
+test('timer starts, pauses, resumes, survives navigation/reload and saves once', async ({ page }) => {
+  await page.getByLabel('Project to track').selectOption({ label: 'Payments API v2' })
+  await page.getByRole('button', { name: 'Start tracking' }).click()
+  await page.clock.setFixedTime(new Date('2026-10-06T06:01:05Z'))
+  await expect(page.getByRole('timer')).toHaveText('00:01:05')
+  await page.getByRole('button', { name: 'Pause', exact: true }).click()
+  await page.reload()
+  await expect(page.getByRole('button', { name: 'Resume', exact: true })).toBeVisible()
+  await page.clock.setFixedTime(new Date('2026-10-06T06:02:05Z'))
+  await expect(page.getByRole('timer')).toHaveText('00:01:05')
+  await page.getByRole('button', { name: 'Resume', exact: true }).click()
+  await page.clock.setFixedTime(new Date('2026-10-06T06:02:10Z'))
+  await page.locator('.primary-nav').getByRole('link', { name: 'Tasks' }).click()
+  await page.clock.setFixedTime(new Date('2026-10-06T06:02:20Z'))
+  await page.locator('.primary-nav').getByRole('link', { name: 'Dashboard' }).click()
+  await expect(page.getByRole('timer')).toHaveText('00:01:20')
+  await page.reload()
+  await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Stop & save' }).click()
+  await expect(page.getByRole('timer')).toHaveText('00:00:00')
+  await expect(page.getByTestId('today-total')).toHaveText('00:01:20')
+  const stored = await page.evaluate((key) => ({ sessions: JSON.parse(localStorage.getItem(key)).data.filter((record) => record.endedAt !== null) }), keys['time-entries'])
+  expect(stored.sessions).toHaveLength(1)
+  expect(stored.sessions[0].label).toBe('Payments API v2')
+  expect(stored.sessions[0].duration).toBe(80000)
+  await page.reload()
+  await expect(page.getByTestId('today-total')).toHaveText('00:01:20')
+})
+
+test('all existing routes render without browser errors', async ({ page }) => {
+  const errors = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  for (const [hash, title] of [['tasks', 'Tasks'], ['calendar', 'Calendar'], ['analytics', 'Analytics'], ['team', 'Team'], ['settings', 'Settings'], ['help', 'How can we help?'], ['dashboard', 'Dashboard']]) {
+    await page.goto(`/#${hash}`)
+    await expect(page.locator('main h1')).toHaveText(title)
+  }
+  expect(errors).toEqual([])
+})
+
+test('search opens project details and overlays dismiss with Escape/outside click', async ({ page }) => {
+  await page.getByLabel('Search projects, tasks, and people').fill('Payments')
+  await page.locator('.search-results').getByRole('button').first().click()
+  await expect(page.getByRole('dialog')).toContainText('Payments API v2')
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+  await page.getByRole('button', { name: /^Notifications,/ }).click()
+  await expect(page.locator('.notifications-popover')).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page.locator('.notifications-popover')).not.toBeVisible()
+  await page.getByRole('button', { name: /^Notifications,/ }).click()
+  await page.getByRole('heading', { name: 'Dashboard', exact: true }).click()
+  await expect(page.locator('.notifications-popover')).not.toBeVisible()
+})
+
+test('responsive dashboard and modal focus with reduced motion', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  for (const width of [1440, 1024, 768, 390, 320]) {
+    await page.setViewportSize({ width, height: 900 })
+    await expect(page.getByRole('heading', { name: 'Dashboard', exact: true })).toBeVisible()
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  }
+  await page.getByRole('button', { name: 'Open menu' }).click()
+  await page.locator('.primary-nav').getByRole('link', { name: 'Tasks' }).click()
+  await expect(page.locator('main h1')).toHaveText('Tasks')
+  await page.goto('/#dashboard')
+  await page.getByRole('button', { name: 'Add Project', exact: true }).click()
+  for (let i = 0; i < 9; i++) {
+    await page.keyboard.press('Tab')
+    expect(await page.evaluate(() => document.querySelector('[role="dialog"]').contains(document.activeElement))).toBe(true)
+  }
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('dialog')).not.toBeVisible()
+  await expect(page.getByRole('button', { name: 'Add Project', exact: true })).toBeFocused()
+})
+
+test('dashboard quick actions and project CSV import update saved records', async ({ page }) => {
+  await page.getByRole('button', { name: 'Create task', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByLabel('Task name').fill('Review the Phase 2 build')
+  await dialog.getByRole('combobox', { name: 'Stage' }).selectOption('Done')
+  await dialog.getByRole('button', { name: 'Create task', exact: true }).click()
+  await expect(page.getByRole('progressbar', { name: 'Task completion' })).toHaveAttribute('aria-valuenow', '21')
+  await page.getByRole('button', { name: 'Add event', exact: true }).click()
+  await dialog.getByLabel('Event name').fill('Release review')
+  await dialog.getByLabel('Date', { exact: true }).fill('2026-10-21')
+  await dialog.getByLabel('Time', { exact: true }).fill('11:30')
+  await dialog.getByRole('button', { name: 'Add event', exact: true }).click()
+  await page.getByRole('button', { name: 'Import Data', exact: true }).click()
+  await dialog.locator('input[type=file]').setInputFiles({ name: 'projects.csv', mimeType: 'text/csv', buffer: Buffer.from('project,description,status,deadline\nImported project,From CSV,Pending,2026-10-25') })
+  await dialog.getByRole('button', { name: 'Import data', exact: true }).click()
+  await expect(stat(page, 'Total Projects')).toHaveAttribute('aria-label', '4')
+  await expect(stat(page, 'Pending Projects')).toHaveAttribute('aria-label', '1')
+  await page.reload()
+  const records = await page.evaluate((keys) => ({ tasks: JSON.parse(localStorage.getItem(keys.tasks)).data, events: JSON.parse(localStorage.getItem(keys.events)).data, projects: JSON.parse(localStorage.getItem(keys.projects)).data }), keys)
+  expect(records.tasks.some((task) => task.title === 'Review the Phase 2 build' && task.status === 'Done')).toBe(true)
+  expect(records.events.find((event) => event.title === 'Release review')).toMatchObject({ date: '2026-10-21', time: '11:30', color: 'sage', ownerId: 'local-user', workspaceId: 'local-workspace' })
+  expect(records.projects.some((project) => project.name === 'Imported project' && project.status === 'Pending')).toBe(true)
+})
+
+test('legacy browser records migrate without losing data or changing stable links', async ({ page }) => {
+  await page.evaluate(() => {
+    localStorage.clear()
+    localStorage.setItem('fernly-projects', JSON.stringify([{ id: 'legacy-project', name: 'Legacy customer project', description: 'Keep this description.', due: 'Oct 25, 2026' }]))
+    localStorage.setItem('fernly-tasks', JSON.stringify([{ id: 17, title: 'Legacy task', status: 'To do', due: 'Today', team: 'Design', priority: 'Medium', assignees: ['NC'], comments: 2 }]))
+    localStorage.setItem('fernly-events', JSON.stringify({ '2026-9-21': [{ label: 'Legacy meeting', time: '11:30', color: 'sage' }] }))
+    localStorage.setItem('fernly-tracker-v1', JSON.stringify({ active: null, sessions: [{ id: 'legacy-session', projectId: 'legacy-project', label: 'Legacy customer project', startedAt: 1000, endedAt: 2500, duration: 1500, segments: [{ start: 1000, end: 2500 }], runningSince: null }] }))
+  })
+  await page.reload()
+  await expect(stat(page, 'Total Projects')).toHaveAttribute('aria-label', '1')
+  await expect(page.locator('.project-open')).toContainText('Legacy customer project')
+  await expect(page.locator('.timer-history summary')).toContainText('Saved sessions (1)')
+  const migrated = await page.evaluate((keys) => Object.fromEntries(Object.entries(keys).map(([name, key]) => [name, JSON.parse(localStorage.getItem(key)).data])), keys)
+  expect(migrated.projects[0]).toMatchObject({ id: 'legacy-project', description: 'Keep this description.', deadline: '2026-10-25' })
+  expect(migrated['time-entries'][0]).toMatchObject({ id: 'legacy-session', projectId: 'legacy-project', duration: 1500 })
+  expect(migrated.events[0]).toMatchObject({ title: 'Legacy meeting', date: '2026-10-21', time: '11:30' })
+  for (const records of Object.values(migrated)) for (const record of records) {
+    expect(record.id).toBeTruthy()
+    expect(record.ownerId).toBe('local-user')
+    expect(record.workspaceId).toBe('local-workspace')
+  }
+  await page.reload()
+  const restored = await page.evaluate((keys) => Object.fromEntries(Object.entries(keys).map(([name, key]) => [name, JSON.parse(localStorage.getItem(key)).data])), keys)
+  expect(restored).toEqual(migrated)
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('fernly-projects'))[0].name)).toBe('Legacy customer project')
+})
