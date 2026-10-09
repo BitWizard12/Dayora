@@ -1,12 +1,14 @@
 # Dayora Firebase deployment and recovery
 
+For the current Vercel/Render rollout, use [FINAL-DEPLOYMENT.md](FINAL-DEPLOYMENT.md). Storage is now optional at startup; direct vercel.app/onrender.com requests use SameSite=None and credentialed CORS.
+
 Firebase Authentication + Firestore are the active architecture. Express runs Firebase Admin; Vercel serves React; Render runs the API. Storage is required for the existing profile/team image upload feature. Atlas instructions in `DEPLOYMENT-MONGODB-HISTORY.md` are obsolete. Local emulator tests do not certify a deployed environment.
 
 ## Firebase Console and IAM
 
 1. Create separate staging and production Firebase projects. Register a web app and copy only its public apiKey, projectId and authDomain into Vite variables.
 2. Enable Authentication → Email/Password. Add your actual frontend domains to authorized domains. Configure email-enumeration protection and a password policy compatible with Dayora's 12–128 character form requirement. Verify policy behavior in staging; emulator behavior is not proof of provider enforcement.
-3. Create the **default Firestore Native-mode database**, select its location deliberately, and deploy the deny-all rules below before opening the application. Do not create a MongoDB-compatible database. Provision Storage and record the exact Console bucket name; new buckets may use `PROJECT.firebasestorage.app`, older ones `PROJECT.appspot.com`.
+3. Create the **default Firestore Native-mode database**, select its location deliberately, and deploy the deny-all rules below before opening the application. Do not create a MongoDB-compatible database. If enabling photos, provision Storage and record the exact Console bucket name; new buckets may use `PROJECT.firebasestorage.app`, older ones `PROJECT.appspot.com`.
 4. Create a dedicated backend service identity with only the required Firebase Authentication administration, Firestore data and private Storage object permissions. Admin SDK bypasses Security Rules; do not grant these credentials to browsers or untrusted scripts. Use least privilege rather than project Owner. Verify actual IAM permissions against staging readiness, uploads, sessions, role changes and exports. Prefer an attached service identity/ADC on supported Google runtimes; Render uses secret `FIREBASE_SERVICE_ACCOUNT_JSON` or a protected credential file through `GOOGLE_APPLICATION_CREDENTIALS`.
 5. Restrict bucket IAM/public access, keep direct Storage client rules denied, configure billing/budgets and usage alerts, and separately grant backup operators the required export/import/bucket permissions. Cloud services and TTL/export features can incur charges; confirm your project's billing eligibility in Console.
 
@@ -33,7 +35,7 @@ Without TTL, expired session registries and keys from abandoned IPs accumulate. 
 
 Spark currently provides 50,000 reads, 20,000 writes and 20,000 deletes daily, plus 1 GiB storage. Limiter requests each incur a transactional read/write (login/mail routes incur additional limiter operations); workspace polling and full snapshots also consume reads. Monitor actual usage and concurrency before inviting users. Quota exhaustion can make the application unavailable; the per-minute limiter is not a daily quota budget. See [current free quotas](https://firebase.google.com/docs/firestore/quotas). Managed backup/PITR/restore features also require billing; the recovery procedure below is conditional on that capability.
 
-**Separate limitation:** Firebase Storage requires Blaze under its current billing policy. Existing production validation still requires a bucket for Dayora's photo feature; this patch does not bypass that requirement or silently disable uploads. Spark-compatible Firestore indexes therefore do not guarantee an entirely Spark-only Dayora deployment. Full photo functionality needs eligible Storage/billing; supporting production without photos would require an explicit, separately reviewed feature configuration. See [Firebase Storage billing requirements](https://firebase.google.com/docs/storage/faqs-storage-changes-announced-sept-2024).
+**Photo limitation:** Firebase Storage requires eligible billing. FIREBASE_STORAGE_BUCKET is optional: omit it to run the core app without photos; the API advertises disabled uploads and profile/contact forms show that status. New uploads fail clearly without writing base64 images to Firestore. Existing media references remain intact. Enabling photos later requires a real private bucket and verified access. See [Firebase Storage billing requirements](https://firebase.google.com/docs/storage/faqs-storage-changes-announced-sept-2024).
 
 ## Email behavior
 
@@ -52,7 +54,7 @@ NODE_ENV=production
 FIREBASE_PROJECT_ID=your-real-project
 FIREBASE_WEB_API_KEY=public-web-api-key-for-the-same-project
 FIREBASE_SERVICE_ACCOUNT_JSON=<secret one-line service-account JSON>
-FIREBASE_STORAGE_BUCKET=<exact Console bucket>
+# Optional after enabling Storage: FIREBASE_STORAGE_BUCKET=<exact Console bucket>
 APP_ORIGIN=https://app.your-domain.com
 TRUST_PROXY=1
 COOKIE_SAME_SITE=lax
@@ -62,9 +64,9 @@ MAIL_FROM=Dayora <hello@your-domain.com>
 SMTP_URL=smtps://resend:YOUR_RESEND_API_KEY@smtp.resend.com:465
 ```
 
-Admin credentials must match the configured project; production refuses missing credential configuration, emulator hosts, HTTP origins, preview mail and memory-only limiting. Review `TRUST_PROXY` for the actual proxy chain; do not copy it to a directly exposed server. Use HTTPS `api.your-domain.com` and HTTPS `app.your-domain.com`. Lax cookies work for these same-site subdomains. Separate unrelated Vercel/Render domains may require `SameSite=None` and remain subject to browser third-party-cookie restrictions; custom same-site domains are preferred.
+Admin credentials must match the configured project; production refuses missing credential configuration, emulator hosts, HTTP origins, preview mail and memory-only limiting. Review `TRUST_PROXY` for the actual proxy chain; do not copy it to a directly exposed server. Use HTTPS `api.your-domain.com` and HTTPS `app.your-domain.com`. Lax cookies work for these same-site subdomains. Direct unrelated Vercel/Render domains require `SameSite=None` and remain subject to browser third-party-cookie restrictions; custom same-site domains are preferred.
 
-Private image responses use `Cross-Origin-Resource-Policy: same-site`; photos require same-site app/API subdomains or an intentional same-origin API proxy. An unrelated-domain `SameSite=None` deployment alone does not enable photo rendering.
+Private image responses retain `Cross-Origin-Resource-Policy: same-site`. Avatars fetch private images through credentialed CORS into revocable blob URLs, allowing the direct Vercel/Render topology when browser cookie policy permits it. Same-site custom domains remain preferable.
 
 Liveness indicates the process is running; readiness makes bounded Auth/Firestore reads. Neither checks Storage, SMTP, rules or all required indexes. Run `npm run db:verify` with injected server environment for a read-only Auth/Firestore check and validate remaining services explicitly.
 

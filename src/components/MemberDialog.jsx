@@ -4,9 +4,11 @@ import Avatar from './Avatar'
 import { workspaceRepositories as repos } from '../repositories/workspaceRepositories'
 import { assignedMemberIds, departments, readMemberPhoto, teamWorkload } from '../services/team'
 import useWorkspace from '../hooks/useWorkspace'
+import useAuth from '../hooks/useAuth'
 
 export default function MemberDialog({ member: current, team, tasks, onTask, onClose }) {
   const { canManage } = useWorkspace()
+  const { user } = useAuth()
   const [initial] = useState(current), [error, setError] = useState(''), [busy, setBusy] = useState(false), [confirm, setConfirm] = useState(false)
   const member = current || initial
   const [photo, setPhoto] = useState(member?.photo || '')
@@ -17,7 +19,8 @@ export default function MemberDialog({ member: current, team, tasks, onTask, onC
   return <Modal title={member ? 'Team member details' : 'Add team member'} onClose={onClose}><form className="modal-form phase4-detail" onSubmit={(e) => { e.preventDefault(); const fields = Object.fromEntries(new FormData(e.currentTarget)); run(() => repos.team.saveMember({ ...fields, photo, color: member?.color || 'sage' }, member?.id), true) }}>
     <div className="member-profile"><Avatar initials={member?.initials || 'TM'} color={member?.color} photo={photo} /><div><strong>{member?.name || 'A new face for your workspace'}</strong><p>Workspace member · No account access</p></div></div>
     <fieldset className="contact-fields" disabled={!canManage}>
-    <label>Profile picture<input type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={(e) => { const file = e.target.files[0]; if (file) run(async () => setPhoto(await readMemberPhoto(file))) }} /></label>{photo && <button type="button" className="text-link" onClick={() => setPhoto('')}>Remove picture</button>}
+    <label>Profile picture<input type="file" disabled={user?.photoUploadsEnabled === false} accept="image/png,image/jpeg,image/webp,image/gif" onChange={(e) => { const file = e.target.files[0]; if (file) run(async () => setPhoto(await readMemberPhoto(file))) }} /></label>{photo && <button type="button" className="text-link" onClick={() => setPhoto('')}>Remove picture</button>}
+    {user?.photoUploadsEnabled === false && <p>Photo uploads are unavailable. Contact details can still be saved.</p>}
     <label>Full name<input name="name" required maxLength={120} defaultValue={member?.name || ''} data-initial-focus /></label><label>Email address<input name="email" type="email" required defaultValue={member?.email || ''} /></label>
     <div className="form-row"><label>Role<input name="role" required defaultValue={member?.role || ''} /></label><label>Department<select name="department" defaultValue={member?.department || 'Product'}>{departments.map((department) => <option key={department}>{department}</option>)}</select></label></div>
     </fieldset>

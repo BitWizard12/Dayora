@@ -17,6 +17,7 @@ export const publicUser = (user) => ({ id: user.id, email: user.email, name: use
 const equal = (a, b) => typeof a === 'string' && typeof b === 'string' && Buffer.byteLength(a) === Buffer.byteLength(b) && timingSafeEqual(Buffer.from(a), Buffer.from(b))
 
 export function createAuth({ config, mailer }) {
+  const viewUser = (user) => ({ ...publicUser(user), photoUploadsEnabled: !!config.FIREBASE_STORAGE_BUCKET })
   const router = Router(), firebase = getFirebase()
   const cookieName = config.NODE_ENV === 'production' ? '__Host-dayora' : 'dayora-session', keyName = `${cookieName}-key`
   const cookieOptions = { httpOnly: true, secure: config.NODE_ENV === 'production', sameSite: config.COOKIE_SAME_SITE, path: '/' }
@@ -71,7 +72,7 @@ export function createAuth({ config, mailer }) {
       return { id: decoded.uid, ...next }
     })
     for (const [name, value] of [[cookieName, cookie], [keyName, key]]) res.cookie(name, value, { ...cookieOptions, ...(input.remember ? { maxAge: expiresIn } : {}) })
-    res.json({ user: publicUser(user), csrf: csrfValue })
+    res.json({ user: viewUser(user), csrf: csrfValue })
   })
   router.post('/auth/forgot-password', mailLimit, async (req, res) => {
     const { email } = z.object({ email: emailSchema }).strict().parse(req.body)
@@ -100,7 +101,7 @@ export function createAuth({ config, mailer }) {
     await firebase.auth.revokeRefreshTokens(identity.uid)
     clearCookie(res); res.json({ message: 'Password reset. Sign in with your new password.' })
   })
-  router.get('/auth/session', authenticate, (req, res) => res.json({ user: publicUser(req.user), csrf: req.session.csrf, expiresAt: req.session.expiresAt }))
+  router.get('/auth/session', authenticate, (req, res) => res.json({ user: viewUser(req.user), csrf: req.session.csrf, expiresAt: req.session.expiresAt }))
   router.post('/auth/logout', authenticate, csrf, async (req, res) => { await sessionRef(req.user.id, req.session.id).delete(); clearCookie(res); res.json({ message: 'Signed out.' }) })
   router.post('/auth/logout-others', authenticate, csrf, async (req, res) => { await revokeAccountSessions(req.user.id, { except: req.session.id }); res.json({ message: 'Other sessions signed out.' }) })
   const reauthenticate = async (user, password) => { const identity = await firebaseAuthRequest(config, 'signInWithPassword', { email: user.email, password, returnSecureToken: true }); if (identity.localId !== user.id) throw new ApiError(403, 'REAUTH_REQUIRED', 'Reauthentication required.'); return identity }
@@ -116,7 +117,7 @@ export function createAuth({ config, mailer }) {
     input.photo = await storePhoto(req.user.id, input.photo)
     await userRef(req.user.id).update(input)
     await firebase.auth.updateUser(req.user.id, { displayName: input.name })
-    res.json({ user: publicUser(await accountByUid(req.user.id)) })
+    res.json({ user: viewUser(await accountByUid(req.user.id)) })
   })
   return { router, authenticate, csrf, admin, reauthenticate }
 }

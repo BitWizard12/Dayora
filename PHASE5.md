@@ -1,5 +1,7 @@
 # Dayora Phase 5 — Firebase migration
 
+Deployment update: [FINAL-DEPLOYMENT.md](FINAL-DEPLOYMENT.md) supersedes original startup/hosting assumptions. Storage is optional for core use; private avatars now use credentialed CORS blob fetches. Historical phase test counts below are retained.
+
 Firebase Authentication, Cloud Firestore, Firebase Admin SDK and private Firebase Storage are now the active implementation. MongoDB/Mongoose/Atlas has been removed from runtime code, dependencies, fixtures and deployment configuration. The previous phase/deployment reports are preserved as explicitly obsolete history. This continues the existing application; `src/App.jsx`, completed dashboard/task/calendar/team/analytics pages, styles and motion tokens were not rebuilt.
 
 ## Architecture and preserved functionality

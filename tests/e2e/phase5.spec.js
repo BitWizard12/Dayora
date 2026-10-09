@@ -253,6 +253,21 @@ test('Firebase browser login keeps tokens in memory and private profile images s
   expect(profile.photo).toMatch(/^media:/)
   const loaded = page.waitForResponse((response) => response.url().endsWith(`/api/media/${profile.photo.slice(6)}`) && response.status() === 200)
   await page.reload(); await loaded
-  await expect(page.locator('.profile-photo .avatar')).toHaveCSS('background-image', new RegExp(`/api/media/${profile.photo.slice(6)}`))
+  await expect(page.locator('.profile-photo .avatar')).toHaveCSS('background-image', /blob:/)
   expect(await page.evaluate(() => Object.keys(localStorage))).toEqual([])
+})
+
+test('Storage-disabled accounts can save profile details with photo uploads clearly disabled', async ({ page }) => {
+  await login(page, 'migrator@example.com')
+  await page.route('**/api/auth/session', async (route) => {
+    const response = await route.fetch(), body = await response.json()
+    if (body.user) body.user.photoUploadsEnabled = false
+    await route.fulfill({ response, json: body })
+  })
+  await page.goto('/#settings'); await page.reload()
+  await expect(page.getByText('Photo uploads are unavailable. You can still update your profile details.')).toBeVisible()
+  await expect(page.locator('input[type=file]')).toBeDisabled()
+  await page.getByLabel('About', { exact: true }).fill('Core profile editing remains available')
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click()
+  await expect(page.getByRole('status')).toContainText('Profile saved')
 })

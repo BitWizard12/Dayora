@@ -131,6 +131,7 @@ test('running and saved timer notes, task associations and Daily Note persist th
   await expect(page.getByRole('button', { name: 'Save session note', exact: true })).toBeEnabled()
   await page.reload()
   await expect(page.getByLabel('Timer work note')).toHaveValue('Tested email verification')
+  await expect(page.getByRole('timer', { name: 'Current session elapsed time' })).not.toHaveText('00:00:00')
   await page.getByRole('button', { name: 'Stop & save', exact: true }).click()
   await expect(dialog).toBeVisible()
   await dialog.getByRole('textbox', { name: 'What I did', exact: true }).fill('Configured Firebase and tested verification')

@@ -1,5 +1,7 @@
 # Dayora final refinement and deployment report
 
+Later deployment changes and current rollout steps are in [FINAL-DEPLOYMENT.md](FINAL-DEPLOYMENT.md); this report records the earlier refinement patch.
+
 Date: 9 October 2026. This patch extends the existing React/Vite, Express and Firebase application. Production Firebase, SMTP and environment files were not modified or contacted. No deployment, commit or push was performed.
 
 ## 1. Exact files modified (39)

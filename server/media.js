@@ -22,7 +22,7 @@ export async function storePhoto(uid, photo) {
     return photo
   }
   const { bytes, type } = decodePhoto(photo), { bucket } = getFirebase()
-  if (!bucket) throw new ApiError(503, 'STORAGE_UNAVAILABLE', 'Photo storage is not configured.')
+  if (!bucket) throw new ApiError(503, 'STORAGE_UNAVAILABLE', 'Photo uploads are unavailable. Your profile and workspace can still be saved without a new photo.')
   const id = randomUUID(), object = `users/${uid}/images/${id}`
   await bucket.file(object).save(bytes, { resumable: false, metadata: { contentType: type, cacheControl: 'private, no-store' } })
   try { await userRef(uid).collection('media').doc(id).create({ object, contentType: type, size: bytes.length, ownerId: uid, createdAt: Date.now() }) }

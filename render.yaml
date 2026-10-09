@@ -2,6 +2,8 @@ services:
   - type: web
     name: dayora-api
     runtime: node
+    branch: main
+    autoDeployTrigger: commit
     buildCommand: npm ci --omit=dev
     startCommand: npm run start:api
     healthCheckPath: /api/health/ready
@@ -13,7 +15,7 @@ services:
       - key: TRUST_PROXY
         value: 1
       - key: COOKIE_SAME_SITE
-        value: lax
+        value: none
       - key: MAIL_MODE
         value: smtp
       - key: RATE_LIMIT_STORE
@@ -24,10 +26,8 @@ services:
         sync: false
       - key: FIREBASE_SERVICE_ACCOUNT_JSON
         sync: false
-      - key: FIREBASE_STORAGE_BUCKET
-        sync: false
       - key: APP_ORIGIN
-        sync: false
+        value: https://dayora-five.vercel.app
       - key: SMTP_URL
         sync: false
       - key: MAIL_FROM
