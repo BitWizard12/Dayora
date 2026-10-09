@@ -1,6 +1,10 @@
 # Dayora final deployment
 
-This is the current deployment guide for **dayora-five.vercel.app → Render**. No Render URL is known yet; do not substitute a guessed URL. Local credentials/environment files stay private. Firebase rules/indexes and SMTP are reported working by the owner; this patch does not redeploy them.
+This is the current deployment guide for **dayora-five.vercel.app → https://dayora-api.onrender.com**. Vercel Production must use **VITE_API_URL=https://dayora-api.onrender.com**. The generated CSP permits exactly this API origin in connect-src and img-src. Local credentials/environment files stay private. Firebase rules/indexes and SMTP are reported working by the owner; this patch does not redeploy them.
+
+Final wiring validation (October 9, 2026): deployment:configure and the production build passed with the exact API origin. The read-only live API checker passed liveness/readiness, exact credentialed CORS, workspace/CSRF preflight headers, untrusted-origin denial and safe unauthenticated JSON 401 responses. No credentials were sent, user records changed or emails sent. Browser session behavior remains a production acceptance check. No additional Render redeploy is required for these frontend CSP/settings changes; pushing main may trigger its configured automatic deployment.
+
+For the current missing Firebase environment failure, follow [RENDER-FIX-NOW.md](RENDER-FIX-NOW.md). Commit c363082319fb76a29c5117be29d829c115dce5d8 already uses the correct backend names. No application/configuration change is needed to fix group linking or blank dashboard overrides. `dotenv/config` does not overwrite injected variables by default; ignored local .env files and .env.example do not provision Render settings. `sync:false` prompts for a value during Blueprint creation; it does not supply a value or link a group. Blueprint `fromGroup` is supported, but no reference is added without verifying the actual group identity in Render.
 
 ## Step 1 — push the reviewed latest main
 
@@ -16,7 +20,7 @@ git push origin main
 git rev-parse HEAD
 ```
 
-The last command gives the exact commit Render must deploy. It will be newer than 1bf94c4 after this patch. Do not redeploy 422f0e9. No .env or credential file belongs in the commit.
+The last command gives the exact commit Render must deploy. The repository-side deployment patch is already pushed as c363082319fb76a29c5117be29d829c115dce5d8. The dashboard environment fix does not require another code commit; commit/push subsequent repository changes only when desired. Do not redeploy 422f0e9. No .env or credential file belongs in the commit.
 
 ## Step 2 — configure the Render service
 
@@ -56,7 +60,7 @@ These are the definitive deployment keys checked by deploy:preflight.
 | --- | --- |
 | NODE_ENV | production |
 | NODE_VERSION | 22.20.0; explicit deployment pin |
-| FIREBASE_PROJECT_ID | Actual Firebase project ID, not app ID/project number |
+| FIREBASE_PROJECT_ID | dayora-5a3ad (project ID, not app ID/project number) |
 | FIREBASE_WEB_API_KEY | Public Firebase web-app API key for that same project |
 | APP_ORIGIN | https://dayora-five.vercel.app |
 | TRUST_PROXY | 1 for the Render proxy |
@@ -81,7 +85,7 @@ A mounted GOOGLE_APPLICATION_CREDENTIALS secret file is an alternative to JSON. 
 - PORT: injected by Render, default 3001 outside Render.
 - FIREBASE_STORAGE_BUCKET: optional; leave absent while Storage is unavailable. Core auth/projects/tasks/calendar/team/work-log/notes/analytics work without it. New photo uploads are disabled and show a clear message; initials remain available. Enable eligible private Storage and configure its exact bucket later. Do not point at a fake bucket.
 - GOOGLE_APPLICATION_CREDENTIALS: alternative backend credential path, only if the secret file is actually mounted.
-- DAYORA_API_URL: check tooling only, set after Render URL exists.
+- DAYORA_API_URL: check tooling only; https://dayora-api.onrender.com.
 - VITE_*: frontend build settings, not needed on Render; do not copy frontend variables or secrets into arbitrary VITE_* keys.
 - Firebase emulator hosts, VITE_FIREBASE_AUTH_EMULATOR_URL, preview mail and memory limiting: forbidden in production. Remove them rather than configuring localhost.
 
@@ -105,7 +109,7 @@ It loads ignored server/.env/root .env when present; shell/host environment take
 
 It validates environment/SMTP syntax, public-variable allowlist, HTTPS origins/cookies/limiter, Firebase public key acceptance, Admin Auth and read-only Firestore access, and local health route wiring. No user records are written and no email is sent. It does not test SMTP delivery or Storage writes.
 
-Until the API URL exists, run `npm.cmd run deploy:preflight -- --backend-only`. This explicitly defers both API-origin inputs for this backend check, including a local development HTTP URL. It still rejects unknown VITE_* secrets and emulator configuration. It prints **PENDING frontend API wiring** and can pass backend checks. That is not a fully deployable frontend. With a real API URL supplied, it also verifies exact connect-src/img-src CSP permissions.
+For the complete preflight, set VITE_API_URL=https://dayora-api.onrender.com in the trusted shell. It verifies exact connect-src/img-src CSP permissions. `npm.cmd run deploy:preflight -- --backend-only` remains available to check only the backend; it deliberately skips API/CSP wiring and prints PENDING even though the production origin is now known.
 
 ## Step 5 — deploy the latest commit
 
@@ -115,10 +119,10 @@ Read the deploy event/logs for the exact commit, Node 22.20.0 and successful sta
 
 ## Step 6 — capture the real URL and check health
 
-Copy the actual Render public HTTPS origin after the service is live:
+Use the confirmed Render public HTTPS origin:
 
 ```powershell
-$env:DAYORA_API_URL = Read-Host 'Paste the actual Render HTTPS origin'
+$env:DAYORA_API_URL = 'https://dayora-api.onrender.com'
 $env:APP_ORIGIN = 'https://dayora-five.vercel.app'
 npm.cmd run deploy:check-api
 ```
@@ -132,7 +136,7 @@ Open **Vercel → Dayora project → Settings → Environment Variables**. Set t
 - VITE_FIREBASE_API_KEY
 - VITE_FIREBASE_PROJECT_ID
 - VITE_FIREBASE_AUTH_DOMAIN
-- VITE_API_URL = the exact real Render HTTPS origin from Step 6
+- VITE_API_URL = https://dayora-api.onrender.com
 
 All Firebase web values must match the backend project. Never set Admin JSON, private keys, SMTP_URL or Resend credentials under VITE_*. Vercel-owned VITE_VERCEL_* metadata is allowed; arbitrary user VITE_* variables remain rejected. Keep https://dayora-five.vercel.app authorized in Firebase Auth.
 
@@ -141,7 +145,7 @@ All Firebase web values must match the backend project. Never set Admin JSON, pr
 In the repository shell, using the real URL already captured:
 
 ```powershell
-$env:VITE_API_URL = $env:DAYORA_API_URL
+$env:VITE_API_URL = 'https://dayora-api.onrender.com'
 npm.cmd run deployment:configure
 npm.cmd run build
 git diff -- vercel.json
@@ -150,11 +154,11 @@ git commit -m "Wire Dayora production API CSP"
 git push origin main
 ```
 
-The generator changes only exact API connect-src/img-src destinations and retains other protections. Vite rejects HTTP/localhost API origins, unknown VITE_* keys and API origins absent from the committed CSP. Do not commit a placeholder URL. Until this step the checked-in CSP remains same-origin and deliberately cannot certify direct Render wiring.
+The generator changes only exact API connect-src/img-src destinations and retains other protections. Vite rejects HTTP/localhost API origins, unknown VITE_* keys and API origins absent from the committed CSP. The generated configuration now contains the confirmed Render origin; semantic comparison verified that all other Vercel settings and CSP directives are unchanged (JSON formatting was expanded by the generator).
 
 ## Step 9 — redeploy Vercel
 
-Use **Deployments → production deployment → Redeploy** for the newest main revision, ensuring the new production variables apply. Node 22.x; build npm run build; output dist. Do not deploy firebase-test/regression output. Verify the served CSP contains the exact Render origin and that requests include cookies. The frontend API service already uses credentials:include.
+After saving Production variables and pushing the CSP commit, open **Deployments**, select the deployment for that exact latest main commit, and verify its target is **Production**. If it already deployed successfully after the variables were saved, use it; otherwise choose **Redeploy → Production**. Do not redeploy an older commit missing the CSP. Node 22.x; build npm run build; output dist. Do not deploy firebase-test/regression output. Verify the served CSP contains the exact Render origin and that requests include cookies. The frontend API service already uses credentials:include.
 
 ## Step 10 — live smoke test
 
@@ -192,11 +196,13 @@ Then perform this single browser acceptance checklist with dedicated accounts:
 
 ## Remaining manual work / blockers
 
-No authenticated Render/Vercel management connector is available in this session. Repository changes cannot attach a dashboard group, inject its secrets or select a live deployment revision. Those clicks are Steps 2–5 and 7/9. The real Render URL is still pending, so final CSP generation, Vercel API URL and live health/smoke checks remain blocked on that URL. Real browser cookies and email delivery remain production acceptance work. Nothing requires a fake URL, weaker cookies, direct Firestore access or a production data reset.
+No authenticated Render/Vercel management connector is available in this session. Render is live and the API checks passed. Remaining actions: commit/push the generated vercel.json, set the four Vercel Production variables in Step 7, and deploy the latest main revision as Production. Then verify the served CSP and complete the browser acceptance checklist, including cookies and email delivery. No backend configuration change or manual Render redeploy is required for this frontend wiring.
 
 ## Change manifest and verification
 
-Exact changed files (including new files):
+Final production wiring changes: **vercel.json**, **.env.example**, **FINAL-DEPLOYMENT.md**. **RENDER-FIX-NOW.md** is an uncommitted guide retained from the preceding environment audit.
+
+Earlier deployment preparation manifest (already pushed in c363082319fb76a29c5117be29d829c115dce5d8):
 
 ```text
 .env.example
@@ -230,4 +236,4 @@ vite.config.js
 
 Validation: 76 unit tests, 15 authenticated browser tests and 15 UI regression tests passed; lint and git diff --check passed. The final Vite production build passed with VITE_API_URL explicitly empty in its child process, using the current same-origin CSP. This validates the build, not the pending direct Render connection. The output was rebuilt in production mode after authenticated tests.
 
-The backend-only production preflight passed Firebase Web API key verification, Admin Auth, read-only Firestore and health wiring with locally injected production settings. No email was sent and no user records were changed. Storage was absent and correctly reported disabled. Live API checks and final API/CSP wiring await the actual Render URL. Local .env files, Firebase rules/indexes, and backend credentials were not changed.
+The backend-only production preflight passed Firebase Web API key verification, Admin Auth, read-only Firestore and health wiring with locally injected production settings. No email was sent and no user records were changed. Storage was absent and correctly reported disabled. Subsequently, final API/CSP wiring was generated for https://dayora-api.onrender.com, the production build passed with that origin, and read-only live API checks passed. Local .env files, Firebase rules/indexes, and backend credentials were not changed.
