@@ -3,13 +3,20 @@ import { defineConfig, loadEnv } from 'vite'
 import { apiOrigin } from './scripts/deployment-config.mjs'
 import { readFileSync } from 'node:fs'
 
+export function validatePublicEnvironment(env, config) {
+  const publicKeys = ['VITE_API_URL', 'VITE_FIREBASE_API_KEY', 'VITE_FIREBASE_PROJECT_ID', 'VITE_FIREBASE_AUTH_DOMAIN']
+  const emulatorKey = 'VITE_FIREBASE_AUTH_EMULATOR_URL'
+  // Vercel injects public framework metadata under this reserved namespace.
+  // Keep every other VITE_* key subject to the Dayora allowlist.
+  if (Object.keys(env).some((key) => !publicKeys.includes(key) && key !== emulatorKey && !key.startsWith('VITE_VERCEL_'))) throw new Error('Only the documented Firebase public web configuration and API URL may use VITE_* variables.')
+  if (Object.hasOwn(env, emulatorKey) && (!(config.mode === 'firebase-test' || config.command === 'serve') || !env.VITE_FIREBASE_PROJECT_ID?.startsWith('demo-') || !/^http:\/\/(127\.0\.0\.1|localhost):9099$/.test(env[emulatorKey]))) throw new Error('Firebase emulators require explicit localhost demo configuration and are refused in normal production builds.')
+}
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), { name: 'dayora-public-environment', configResolved(config) {
     const env = loadEnv(config.mode, config.root)
-    const publicKeys = ['VITE_API_URL', 'VITE_FIREBASE_API_KEY', 'VITE_FIREBASE_PROJECT_ID', 'VITE_FIREBASE_AUTH_DOMAIN', 'VITE_FIREBASE_AUTH_EMULATOR_URL']
-    if (Object.keys(env).some((key) => !publicKeys.includes(key))) throw new Error('Only the documented Firebase public web configuration and API URL may use VITE_* variables.')
-    if (env.VITE_FIREBASE_AUTH_EMULATOR_URL && (!(config.mode === 'firebase-test' || config.command === 'serve') || !env.VITE_FIREBASE_PROJECT_ID?.startsWith('demo-') || !/^http:\/\/(127\.0\.0\.1|localhost):9099$/.test(env.VITE_FIREBASE_AUTH_EMULATOR_URL))) throw new Error('Firebase emulators require explicit localhost demo configuration and are refused in normal production builds.')
+    validatePublicEnvironment(env, config)
     if (config.command !== 'build') return
     const origin = apiOrigin(env.VITE_API_URL)
     const deployment = JSON.parse(readFileSync(new URL('./vercel.json', import.meta.url), 'utf8'))
