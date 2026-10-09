@@ -5,6 +5,7 @@ import { createApp } from '../../server/app.js'
 import { createAuth } from '../../server/auth.js'
 import { createRecordRoutes } from '../../server/records.js'
 import { createMediaRoutes } from '../../server/media.js'
+import { createWorkspaceRoutes } from '../../server/workspaceAccess.js'
 import { ensureAccount, userRef, accountByUid } from '../../server/firebaseRepositories.js'
 
 export async function backend(t, extraRoutes = () => []) {
@@ -18,7 +19,7 @@ export async function backend(t, extraRoutes = () => []) {
     if (!response.ok) throw new Error('Could not reset the isolated demo emulator fixtures.')
   }
   const mail = [], auth = createAuth({ config, mailer: async (message) => mail.push(message) })
-  const app = createApp({ config, routes: [auth.router, createRecordRoutes(auth), createMediaRoutes(auth), ...extraRoutes(auth)] })
+  const app = createApp({ config, routes: [auth.router, createWorkspaceRoutes(auth), createRecordRoutes(auth), createMediaRoutes(auth), ...extraRoutes(auth)] })
   const password = 'a strong testing password 123'
   const account = async (name, role = 'user') => {
     const identity = await firebase.auth.createUser({ displayName: name, email: `${name.toLowerCase()}@example.com`, password, emailVerified: true })

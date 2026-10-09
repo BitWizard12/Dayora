@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { isolateLoginClient } from '../helpers/browser-client.js'
 
 const password = 'dayora browser password 123'
 async function login(page, email, secret = password) {
@@ -14,7 +15,7 @@ async function logout(page) {
   await expect(page.getByRole('heading', { name: 'Welcome back', exact: true })).toBeVisible()
 }
 async function workspace(page) { const response = await page.request.get('/api/workspace'); expect(response.ok()).toBeTruthy(); return response.json() }
-test.beforeEach(async ({ page }) => { await page.emulateMedia({ reducedMotion: 'reduce' }) })
+test.beforeEach(async ({ page, context }, testInfo) => { await isolateLoginClient(context, testInfo.title); await page.emulateMedia({ reducedMotion: 'reduce' }) })
 
 test('signup, verification, password reset and protected routes with real backend', async ({ page }) => {
   await page.goto('/#tasks')
@@ -42,6 +43,8 @@ test('signup, verification, password reset and protected routes with real backen
   await page.getByLabel('Email address', { exact: true }).fill('new-account@example.com')
   await page.getByLabel('Password', { exact: true }).fill(password)
   await page.getByRole('button', { name: 'Sign in', exact: true }).click()
+  await expect(page.getByText('HOW WILL YOU USE DAYORA?', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: /^Individual Plan/ }).click()
   await expect(page.locator('main h1')).toHaveText('Dashboard')
   expect((await workspace(page)).collections.tasks).toEqual([])
   await logout(page)
@@ -99,6 +102,7 @@ test('account-specific project/task/team/calendar/timer/analytics persistence ac
   await page.getByRole('button', { name: 'Pause', exact: true }).click(); await page.reload()
   await page.getByRole('button', { name: 'Resume', exact: true }).click()
   await page.getByRole('button', { name: 'Stop & save', exact: true }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Save work log', exact: true }).click()
   await expect(page.locator('.timer-history summary')).toContainText('Saved sessions (1)')
   await page.goto('/#analytics'); await expect(page.locator('main h1')).toHaveText('Analytics')
   await expect(page.getByRole('progressbar', { name: 'Alice private project progress', exact: true })).toHaveAttribute('value', '100')

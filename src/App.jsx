@@ -17,6 +17,7 @@ import './App.css'
 import './styles/phase4.css'
 import useAuth from './hooks/useAuth'
 import AnonymousMigration from './components/AnonymousMigration'
+import useWorkspace from './hooks/useWorkspace'
 
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const TaskBoard = lazy(() => import('./pages/TaskBoard'))
@@ -26,9 +27,12 @@ const TeamPage = lazy(() => import('./pages/TeamPage'))
 const SettingsPage = lazy(() => import('./pages/SettingsPage'))
 const HelpPage = lazy(() => import('./pages/HelpPage'))
 const AdminPage = lazy(() => import('./pages/AdminPage'))
+const WorkLogPage = lazy(() => import('./pages/WorkLogPage'))
+const ProjectsPage = lazy(() => import('./pages/ProjectsPage'))
 
 function App() {
   const { user } = useAuth()
+  const { workspace } = useWorkspace()
   const [page, setPage] = useState(() => window.location.hash === '#admin' && user?.role === 'admin' ? 'admin' : pages.some((item) => item.id === window.location.hash.slice(1)) ? window.location.hash.slice(1) : 'dashboard')
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [search, setSearch] = useState('')
@@ -61,6 +65,7 @@ function App() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
   const go = useCallback((id) => { window.location.hash = id; setPage(id); setSidebarOpen(false); setPanel('') }, [])
+  const closeSidebar = useCallback(() => setSidebarOpen(false), [])
   const openProject = useCallback((id) => { setProjectDialog({ mode: 'details', id }); setSearchOpen(false); setPanel('') }, [])
   const openModal = useCallback((kind) => { if (kind === 'project') setProjectDialog({ mode: 'create' }); else if (kind === 'task') setTaskDialog({ status: 'To do' }); else if (kind === 'event') setEventDialog({}); else if (kind === 'member') setMemberDialog({}); else setModal(kind) }, [])
   const openTask = useCallback((id) => { setMemberDialog(null); setTaskDialog({ id }); setSearchOpen(false); setPanel('') }, [])
@@ -112,14 +117,16 @@ function App() {
   return <MotionConfig reducedMotion="user"><div className="app-shell">
     <a className="skip-link" href="#main">Skip to content</a>
     <AnimatePresence>{sidebarOpen && <motion.button className="mobile-scrim" aria-label="Close menu" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSidebarOpen(false)} />}</AnimatePresence>
-    <Sidebar sidebarOpen={sidebarOpen} page={page} go={go} tasks={tasks} team={team} setModal={openModal} />
-    <div className="app-main"><Header sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} page={page} pageTitle={pageTitle} search={search} setSearch={setSearch} searchOpen={searchOpen} setSearchOpen={setSearchOpen} searchResults={searchResults} go={go} panel={panel} setPanel={setPanel} notifications={notifications} clearNotifications={clearNotifications} onProject={openProject} onTask={openTask} onNotification={selectNotification} />
+    <Sidebar sidebarOpen={sidebarOpen} page={page} go={go} tasks={tasks} team={team} setModal={openModal} onClose={closeSidebar} />
+    <div className="app-main" inert={sidebarOpen || undefined}><Header sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} page={page} pageTitle={pageTitle} search={search} setSearch={setSearch} searchOpen={searchOpen} setSearchOpen={setSearchOpen} searchResults={searchResults} go={go} panel={panel} setPanel={setPanel} notifications={notifications} clearNotifications={clearNotifications} onProject={openProject} onTask={openTask} onNotification={selectNotification} />
     {dataError && <p className="page-content" role="alert">Unable to save or load workspace data: {dataError.message}</p>}
     <main id="main" onClick={() => { if (searchOpen && !search) setSearchOpen(false) }}>
-      {user && <AnonymousMigration />}
+      {user && workspace.type === 'individual' && <AnonymousMigration />}
       <Suspense fallback={<div className="page-content" role="status">Loading workspace…</div>}><AnimatePresence mode="wait" initial={false}><motion.div key={page} className="route-content" variants={pageEntrance} initial="hidden" animate="visible" exit="exit">
         {page === 'dashboard' && <Dashboard projects={projects} tasks={tasks} events={eventState.data} team={team} timeEntries={timeState.data} onEntry={openEntry} onMember={openMember} onNavigate={go} onModal={openModal} onProject={openProject} />}
         {page === 'tasks' && <TaskBoard tasks={tasks} projects={projects} team={team} onOpen={openTask} onCreate={(status) => setTaskDialog({ status })} />}
+        {page === 'projects' && <ProjectsPage projects={projects} tasks={tasks} onProject={openProject} onCreate={() => openModal('project')} />}
+        {page === 'work-log' && <WorkLogPage entries={timeState.data} projects={projects} tasks={tasks} />}
         {page === 'calendar' && <CalendarPage events={eventState.data} tasks={tasks} projects={projects} onCreate={(date, timeZone) => setEventDialog({ date, timeZone })} onEntry={openEntry} />}
         {page === 'analytics' && <AnalyticsPage tasks={tasks} projects={projects} team={team} timeEntries={timeState.data} onProject={openProject} onTask={openTask} onMember={openMember} />}
         {page === 'team' && <TeamPage team={team} tasks={tasks} onMember={openMember} />}

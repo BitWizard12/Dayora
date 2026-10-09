@@ -7,6 +7,7 @@ import { parseCSV } from '../services/csv.js'
 import { taskInput as validateTask } from '../services/tasks.js'
 import { eventInput } from '../services/calendar.js'
 import { assignedMemberIds, completionFields, memberInput } from '../services/team.js'
+import { setMediaWorkspace } from '../services/media.js'
 
 const calendarSeed = {
   '2026-9-8': [{ label: 'Payments API v2', color: 'sage' }],
@@ -33,6 +34,7 @@ export function createWorkspaceRepositories(scope = localScope, adapter = localS
   const projects = repository('projects', 'fernly-projects', initialProjects, projectFields)
   const events = repository('events', 'fernly-events', calendarSeed, eventFields)
   const timeEntries = repository('time-entries', 'fernly-tracker-v1', [], timeEntryFields)
+  const dailyNotes = repository('daily-notes', undefined, [])
   const team = repository('team', 'fernly-team', people, memberFields)
   const notifications = repository('notifications', 'fernly-notifications', notificationSeed)
   const taskInput = (input) => {
@@ -40,7 +42,7 @@ export function createWorkspaceRepositories(scope = localScope, adapter = localS
     if (!title) throw new Error('A task name is required.')
     return { ...validateTask({ ...input, title, priority: input.priority || 'Medium', status: input.status || 'To do',
       dueDate: input.dueDate === undefined ? resolveTaskDueDate(input.due || 'In 3 days') : input.dueDate }),
-      assignees: input.assignees || (local ? ['NC'] : []), assigneeIds: input.assigneeIds || [], comments: 0 }
+      assignees: input.assignees || (local ? ['NC'] : []), assigneeIds: input.assigneeIds || [], ...(input.accountAssigneeIds !== undefined ? { accountAssigneeIds: input.accountAssigneeIds } : {}), comments: 0 }
   }
   tasks.saveTask = async (input, id) => {
     const fields = taskInput(input)
@@ -100,13 +102,45 @@ export function createWorkspaceRepositories(scope = localScope, adapter = localS
   }
   events.createEvent = (input) => events.saveEvent(input)
   events.groupByDay = groupEventsByDay
-  timeEntries.view = trackerView
-  timeEntries.act = (action, now, project) => timeEntries.transact((records) => {
-    const next = transitionTimer(trackerView(records), action, now, project)
-    return [...next.sessions, ...(next.active ? [next.active] : [])].map((entry) => {
+  const ownEntries = (records) => records.filter((record) => !record.authorId || record.authorId === (scope.actorId || scope.ownerId))
+  timeEntries.view = (records) => trackerView(ownEntries(records))
+  timeEntries.act = (action, now, project, details) => timeEntries.transact((records) => {
+    const own = ownEntries(records)
+    const next = transitionTimer(trackerView(own), action, now, project)
+    const others = records.filter((record) => !own.includes(record))
+    return [...others, ...next.sessions, ...(next.active ? [next.active] : [])].map((entry) => {
       const previous = records.find((record) => record.id === entry.id)
-      return { ...entry, createdAt: previous?.createdAt ?? entry.startedAt, updatedAt: entry === previous ? previous.updatedAt : now }
+      if (others.includes(entry)) return entry
+      return { ...entry, ...((!previous || previous.endedAt === null && details !== undefined) ? logFields(details || {}) : {}),
+        ...(scope.actorId ? { authorId: previous?.authorId || scope.actorId } : {}),
+        createdAt: previous?.createdAt ?? entry.startedAt, updatedAt: entry === previous ? previous.updatedAt : now }
     })
+  })
+  const logFields = (input) => {
+    const title = String(input.title || '').trim(), note = String(input.note || '')
+    if (title.length > 200 || note.length > 10000) throw new Error('Keep activity titles under 200 characters and notes under 10,000 characters.')
+    return { title, note, taskId: input.taskId || null }
+  }
+  timeEntries.saveDetails = async (id, input) => {
+    await Promise.all([tasks.load(), timeEntries.load()])
+    const entry = ownEntries(timeEntries.getSnapshot().data).find((item) => item.id === id)
+    if (!entry) throw new Error('You can edit only your own work log.')
+    const fields = logFields(input)
+    if (fields.taskId && !tasks.getSnapshot().data.some((task) => task.id === fields.taskId) && fields.taskId !== entry.taskId) throw new Error('Choose a task in this workspace.')
+    if (input.projectId !== undefined) {
+      await projects.load()
+      fields.projectId = input.projectId || null
+      if (fields.projectId && !projects.getSnapshot().data.some((project) => project.id === fields.projectId) && fields.projectId !== entry.projectId) throw new Error('Choose a project in this workspace.')
+    }
+    return timeEntries.update(id, fields)
+  }
+  dailyNotes.forDate = (records, date) => ownEntries(records).find((record) => record.date === date)
+  dailyNotes.save = (date, note) => dailyNotes.transact((records) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || String(note).length > 10000) throw new Error('Use a valid date and a note under 10,000 characters.')
+    const previous = dailyNotes.forDate(records, date), now = Date.now()
+    const next = { ...(previous || { id: crypto.randomUUID(), createdAt: now }), date, note: String(note), updatedAt: now,
+      ...(scope.actorId ? { authorId: scope.actorId } : {}) }
+    return previous ? records.map((record) => record.id === previous.id ? next : record) : [...records, next]
   })
   notifications.markRead = (id) => notifications.update(id, { read: true })
   notifications.markAllRead = () => notifications.transact((records) => records.map((record) => ({ ...record, read: true, updatedAt: Date.now() })))
@@ -143,6 +177,7 @@ export function createWorkspaceRepositories(scope = localScope, adapter = localS
     await team.remove(id)
   }
   const values = new Map()
+  const draftFlushers = new Set()
   const valueRepository = (legacyKey, fallback, migrate = (value) => value) => {
     if (values.has(legacyKey)) return values.get(legacyKey)
     const collection = legacyKey.replace(/^fernly-/, '')
@@ -167,7 +202,10 @@ export function createWorkspaceRepositories(scope = localScope, adapter = localS
     })
     return projects.createMany(inputs)
   }
-  return { tasks, projects, events, timeEntries, team, notifications, valueRepository, importRows, importCsv: (contents) => importRows(parseCSV(contents)) }
+  return { tasks, projects, events, timeEntries, dailyNotes, team, notifications, valueRepository, importRows, importCsv: (contents) => importRows(parseCSV(contents)),
+    registerDraftFlusher(flush) { draftFlushers.add(flush); return () => draftFlushers.delete(flush) },
+    flushDrafts: () => Promise.all([...draftFlushers].map((flush) => flush())),
+  }
 }
 
 export let workspaceRepositories = createWorkspaceRepositories()
@@ -176,6 +214,8 @@ export function configureWorkspace(scope, adapter) {
   workspaceAdapter?.dispose?.()
   workspaceAdapter = adapter
   workspaceRepositories = createWorkspaceRepositories(scope, adapter)
+  setMediaWorkspace(scope.ownerId !== scope.actorId && scope.actorId ? scope.workspaceId : '')
 }
 export function refreshWorkspace() { return workspaceAdapter?.refresh?.() }
-export function closeWorkspace() { workspaceAdapter?.dispose?.(); workspaceAdapter = undefined }
+export function flushWorkspaceDrafts() { return workspaceRepositories.flushDrafts() }
+export function closeWorkspace() { workspaceAdapter?.dispose?.(); workspaceAdapter = undefined; setMediaWorkspace() }

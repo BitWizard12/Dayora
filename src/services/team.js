@@ -18,6 +18,14 @@ export function teamWorkload(tasks, team) {
     return { ...member, total: assigned.length, completed, pending: assigned.length - completed, progress: assigned.length ? Math.round(completed / assigned.length * 100) : 0 }
   })
 }
+export function accountWorkload(tasks, members) {
+  return members.map((member) => {
+    const assigned = tasks.filter((task) => task.accountAssigneeIds?.includes(member.id))
+    const completed = assigned.filter((task) => task.status === 'Done').length
+    return { ...member, initials: member.name.split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase(), color: 'sage',
+      total: assigned.length, completed, pending: assigned.length - completed, progress: assigned.length ? Math.round(completed / assigned.length * 100) : 0 }
+  })
+}
 export function memberInput(input) {
   const name = String(input.name || '').trim(), email = String(input.email || '').trim().toLowerCase(), role = String(input.role || '').trim()
   if (!name || !role) throw new Error('A name and role are required.')

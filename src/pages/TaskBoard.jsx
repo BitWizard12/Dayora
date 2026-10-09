@@ -13,14 +13,17 @@ import { workspaceRepositories } from '../repositories/workspaceRepositories'
 import '../styles/tasks.css'
 import { cardEntrance } from '../styles/motion'
 import { taskAssignees } from '../services/team'
+import useWorkspace from '../hooks/useWorkspace'
 const Card = memo(function Card({ task, projects, team, onOpen, onComplete, reduced }) {
+  const { members } = useWorkspace()
+  const accounts = members.filter((member) => task.accountAssigneeIds?.includes(member.id)).map((member) => ({ ...member, initials: member.name.split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase() }))
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: task.id, transition: reduced ? null : { duration: 180, easing: 'ease' } })
   return <div ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? .3 : 1 }}><motion.article className={`task-card ${task.status === 'Done' ? 'task-card--completed' : ''}`} variants={cardEntrance} initial={reduced ? false : 'hidden'} animate="visible" exit={{ opacity: 0 }} transition={{ duration: reduced ? 0 : 0.18 }}>
     <div className="task-card__top"><span className="team-tag">{task.team}</span><span className={`priority priority--${task.priority.toLowerCase()}`}><span />{task.priority}</span><button className="icon-btn task-drag" aria-label={`Drag ${task.title}`} {...attributes} {...listeners}><GripVertical size={16} /></button></div>
     <button className="task-title-button task-card__title" onClick={() => onOpen(task.id)}>{task.title}</button>
     {task.projectId && <p className="task-project">{projects.find((item) => item.id === task.projectId)?.name || 'Deleted project'}</p>}
     {task.subtasks.length > 0 && <div className="task-progress"><span>{task.subtasks.filter((item) => item.completed).length}/{task.subtasks.length} subtasks</span><progress aria-label={`${task.title} subtask completion`} max="100" value={subtaskProgress(task)} /></div>}
-    <div className="task-card__bottom"><span className={`task-due ${task.dueDate && task.dueDate < todayDate() && task.status !== 'Done' ? 'task-due--soon' : ''}`}><Clock3 size={13} />{task.dueDate || task.due || 'No deadline'}</span><div className="avatar-stack">{taskAssignees(task, team).map((member, index) => <Avatar key={member.id} initials={member.initials} photo={member.photo} color={member.color || ['sage', 'peach', 'lilac', 'blue'][index % 4]} small />)}</div><button className="icon-btn task-complete" aria-label={`${task.status === 'Done' ? 'Reopen' : 'Complete'} ${task.title}`} onClick={() => onComplete(task)}><Check size={16} /></button></div>
+    <div className="task-card__bottom"><span className={`task-due ${task.dueDate && task.dueDate < todayDate() && task.status !== 'Done' ? 'task-due--soon' : ''}`}><Clock3 size={13} />{task.dueDate || task.due || 'No deadline'}</span><div className="avatar-stack">{[...accounts, ...taskAssignees(task, team)].map((member, index) => <Avatar key={member.id} initials={member.initials} photo={member.photo} color={member.color || ['sage', 'peach', 'lilac', 'blue'][index % 4]} small />)}</div><button className="icon-btn task-complete" aria-label={`${task.status === 'Done' ? 'Reopen' : 'Complete'} ${task.title}`} onClick={() => onComplete(task)}><Check size={16} /></button></div>
   </motion.article></div>
 })
 function Column({ stage, cards, children, onCreate }) {

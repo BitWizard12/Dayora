@@ -3,9 +3,11 @@ import { ArrowUpRight, Bell, ChevronDown, ChevronRight, Command, Menu, MessageSq
 import Avatar from './Avatar'
 import { useEffect, useRef } from 'react'
 import useAuth from '../hooks/useAuth'
+import useWorkspace from '../hooks/useWorkspace'
 
 export default function Header({ sidebarOpen, setSidebarOpen, page, pageTitle, search, setSearch, searchOpen, setSearchOpen, searchResults, go, panel, setPanel, notifications, clearNotifications, onProject, onTask, onNotification }) {
   const { user } = useAuth()
+  const { workspace } = useWorkspace()
   const header = useRef(null)
   useEffect(() => {
     const dismiss = (event) => {
@@ -18,7 +20,7 @@ export default function Header({ sidebarOpen, setSidebarOpen, page, pageTitle, s
     return () => { window.removeEventListener('pointerdown', dismiss); window.removeEventListener('keydown', dismiss) }
   }, [setPanel, setSearchOpen])
   return (
-<header ref={header} className="topbar"><button className="icon-btn topbar-menu" aria-label="Open menu" aria-expanded={sidebarOpen} aria-controls="sidebar" onClick={() => setSidebarOpen(true)}><Menu size={20} /></button><div className="breadcrumbs"><span>{user ? user.name + "'s workspace" : 'Studio North'}</span><ChevronRight size={14} /><strong>{pageTitle}</strong></div>
+<header ref={header} className="topbar"><button className="icon-btn topbar-menu" aria-label="Open menu" aria-expanded={sidebarOpen} aria-controls="sidebar" onClick={() => setSidebarOpen(true)}><Menu size={20} /></button><div className="breadcrumbs"><span>{user ? workspace.name : 'Studio North'}</span><ChevronRight size={14} /><strong>{pageTitle}</strong></div>
       <div className="topbar-search-wrap"><label className="topbar-search"><Search size={16} /><input aria-label="Search projects, tasks, and people" placeholder={page === 'dashboard' ? 'Search projects and people' : `Search ${page}`} value={search} onFocus={() => setSearchOpen(true)} onChange={(e) => { setSearch(e.target.value); setSearchOpen(true) }} onKeyDown={(e) => e.key === 'Escape' && setSearchOpen(false)} /><kbd><Command size={11} /> K</kbd><button className="search-trigger" aria-label="Open search" onClick={() => { setSearchOpen(!searchOpen); document.querySelector('.topbar-search input')?.focus() }} /></label>
         <AnimatePresence>{searchOpen && search && <motion.div className="search-results" initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }}><span className="search-results__label">SEARCH RESULTS</span>{searchResults.length ? searchResults.map((result) => <button key={`${result.type}-${result.id || result.label}`} onClick={() => { if (result.type === 'Project') onProject(result.id); else if (result.type === 'Task') onTask(result.id); else go(result.page); setSearchOpen(false); setSearch('') }}><span className="search-result-icon"><Search size={14} /></span><span>{result.label}<small>{result.type}</small></span><ArrowUpRight size={15} /></button>) : <p>No results found. Try another search.</p>}</motion.div>}</AnimatePresence>
       </div>

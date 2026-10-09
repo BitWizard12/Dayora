@@ -13,7 +13,7 @@ export const hashToken = (value) => createHash('sha256').update(value).digest('h
 const token = () => randomBytes(32).toString('base64url')
 const emailSchema = z.string().trim().email().max(254).transform((email) => email.toLowerCase())
 const passwordSchema = z.string().min(12).max(128), actionSchema = z.string().min(1).max(2000)
-export const publicUser = (user) => ({ id: user.id, email: user.email, name: user.name, role: user.role, verified: !!user.verifiedAt, active: user.active, workspaceId: user.workspaceId, about: user.about || '', jobTitle: user.jobTitle || '', photo: user.photo || '', createdAt: user.createdAt })
+export const publicUser = (user) => ({ id: user.id, email: user.email, name: user.name, role: user.role, verified: !!user.verifiedAt, active: user.active, workspaceId: user.workspaceId, activeWorkspaceId: user.activeWorkspaceId || user.workspaceId, onboardingComplete: user.onboardingComplete !== false, about: user.about || '', jobTitle: user.jobTitle || '', photo: user.photo || '', createdAt: user.createdAt })
 const equal = (a, b) => typeof a === 'string' && typeof b === 'string' && Buffer.byteLength(a) === Buffer.byteLength(b) && timingSafeEqual(Buffer.from(a), Buffer.from(b))
 
 export function createAuth({ config, mailer }) {

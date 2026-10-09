@@ -2,8 +2,10 @@ import { useState } from 'react'
 import { Pencil, Trash2 } from 'lucide-react'
 import Modal from './Modal'
 import { formatDeadline, projectStatuses } from '../utils/projects'
+import useWorkspace from '../hooks/useWorkspace'
 
 export default function ProjectDialog({ project: currentProject, mode, onClose, onSave, onDelete }) {
+  const { canManage } = useWorkspace()
   // Keep details available while an async deletion commits and the dialog exits.
   const [initialProject] = useState(currentProject)
   const project = currentProject || initialProject
@@ -36,7 +38,7 @@ export default function ProjectDialog({ project: currentProject, mode, onClose, 
       {error && <p role="alert">{error}</p>}
       <div className="modal-actions"><button type="button" className="button button--outline" onClick={onClose}>Cancel</button><button className="button button--primary" type="submit" disabled={pending}>{project ? 'Save changes' : 'Create project'}</button></div>
     </form> : <div className="project-details">{error && <p role="alert">{error}</p>}<span className="project-status">{project.status}</span><p>{project.description || 'No description yet. Edit this project to add one.'}</p><dl><div><dt>Deadline</dt><dd>{formatDeadline(project.deadline)}</dd></div></dl>
-      {confirmDelete ? <div className="project-delete-confirm"><p>Delete {project.name}? Saved time sessions will be kept.</p><button className="button button--outline" onClick={() => setConfirmDelete(false)}>Keep project</button><button className="button button--danger" disabled={pending} onClick={remove}>Delete project</button></div> : <div className="modal-actions"><button className="button button--outline" onClick={() => setConfirmDelete(true)}><Trash2 size={15} /> Delete</button><button className="button button--primary" onClick={() => setEditing(true)}><Pencil size={15} /> Edit project</button></div>}
+      {canManage && (confirmDelete ? <div className="project-delete-confirm"><p>Delete {project.name}? Saved time sessions will be kept.</p><button className="button button--outline" onClick={() => setConfirmDelete(false)}>Keep project</button><button className="button button--danger" disabled={pending} onClick={remove}>Delete project</button></div> : <div className="modal-actions"><button className="button button--outline" onClick={() => setConfirmDelete(true)}><Trash2 size={15} /> Delete</button><button className="button button--primary" onClick={() => setEditing(true)}><Pencil size={15} /> Edit project</button></div>)}
     </div>}
   </Modal>
 }

@@ -1,7 +1,8 @@
 import { Router } from 'express'
 import { randomUUID } from 'node:crypto'
 import { getFirebase } from './firebaseAdmin.js'
-import { userRef } from './firebaseRepositories.js'
+import { userRef, recordsRef } from './firebaseRepositories.js'
+import { resolveWorkspace, verifyWorkspaceAccess } from './workspaceAccess.js'
 import { ApiError } from './errors.js'
 import { z } from 'zod'
 
@@ -34,10 +35,22 @@ export async function assertPhotoOwnership(transaction, uid, photo) {
 export function createMediaRoutes(auth) {
   const router = Router()
   router.get('/media/:id', auth.authenticate, async (req, res) => {
-    const id = z.uuid().parse(req.params.id), snapshot = await userRef(req.user.id).collection('media').doc(id).get()
+    const id = z.uuid().parse(req.params.id)
+    let ownerId = req.user.id, snapshot = await userRef(ownerId).collection('media').doc(id).get()
+    if (!snapshot.exists && req.query.workspace) {
+      const shared = await getFirebase().db.runTransaction(async (tx) => {
+        const resolved = await resolveWorkspace(req.user, req.query.workspace, tx)
+        await verifyWorkspaceAccess(resolved, tx)
+        if (resolved.workspaceType !== 'team') return null
+        const linked = await tx.get(recordsRef(resolved, 'team').where('photo', '==', `media:${id}`).limit(1))
+        if (linked.empty) return null
+        return { ownerId: resolved.workspaceOwnerId, snapshot: await tx.get(userRef(resolved.workspaceOwnerId).collection('media').doc(id)) }
+      }, { readOnly: true })
+      if (shared) { ownerId = shared.ownerId; snapshot = shared.snapshot }
+    }
     if (!snapshot.exists || !getFirebase().bucket) throw new ApiError(404, 'NOT_FOUND', 'Photo not found.')
     const data = snapshot.data()
-    if (data.ownerId !== req.user.id || !data.object.startsWith(`users/${req.user.id}/images/`)) throw new ApiError(404, 'NOT_FOUND', 'Photo not found.')
+    if (data.ownerId !== ownerId || !data.object.startsWith(`users/${ownerId}/images/`)) throw new ApiError(404, 'NOT_FOUND', 'Photo not found.')
     const [bytes] = await getFirebase().bucket.file(data.object).download()
     res.set({ 'Content-Type': data.contentType, 'Cache-Control': 'private, no-store', 'Cross-Origin-Resource-Policy': 'same-site' }).send(bytes)
   })

@@ -21,7 +21,7 @@ export function createApp({ config, routes = [], readiness = createReadinessProb
   })
   app.use(helmet())
   app.use('/api', rateLimit({ windowMs: 60000, limit: 300, store: rateLimitStore(config, 'api'), standardHeaders: 'draft-8', legacyHeaders: false, skip: (req) => req.path.startsWith('/health/'), message: { error: { code: 'RATE_LIMITED', message: 'Too many requests. Please try again shortly.' } } }))
-  app.use(cors({ origin: config.APP_ORIGIN, credentials: true, methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'], allowedHeaders: ['Content-Type', 'X-CSRF-Token'] }))
+  app.use(cors({ origin: config.APP_ORIGIN, credentials: true, methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'], allowedHeaders: ['Content-Type', 'X-CSRF-Token', 'X-Workspace-Id'] }))
   app.use(express.json({ limit: '12mb' }))
   app.use(cookieParser())
   app.get('/api/health/live', (_req, res) => res.json({ status: 'ok', service: 'Dayora' }))

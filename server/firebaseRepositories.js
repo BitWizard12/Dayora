@@ -2,10 +2,10 @@ import { randomUUID } from 'node:crypto'
 import { getFirebase } from './firebaseAdmin.js'
 import { ApiError } from './errors.js'
 
-export const collections = ['projects', 'tasks', 'events', 'team', 'time-entries', 'notifications', 'settings', 'profile-photo']
+export const collections = ['projects', 'tasks', 'events', 'team', 'time-entries', 'daily-notes', 'notifications', 'settings', 'profile-photo']
 const names = { 'time-entries': 'timeEntries', 'profile-photo': 'profilePhotos' }
 export function userRef(uid) { if (!uid || uid.includes('/') || uid.length > 128) throw new ApiError(400, 'INVALID_INPUT', 'Invalid account identifier.'); return getFirebase().db.collection('users').doc(uid) }
-export const workspaceRef = (user) => userRef(user.id).collection('workspaces').doc(user.workspaceId)
+export const workspaceRef = (user) => userRef(user.workspaceOwnerId || user.id).collection('workspaces').doc(user.workspaceId)
 export function recordsRef(user, collection) { if (!collections.includes(collection)) throw new ApiError(404, 'NOT_FOUND', 'Collection not found.'); return workspaceRef(user).collection(names[collection] || collection) }
 export const sessionRef = (uid, key) => userRef(uid).collection('sessions').doc(key)
 export const auditRef = () => getFirebase().db.collection('adminAudits').doc(randomUUID())
@@ -16,7 +16,7 @@ export async function ensureAccount(authUser) {
     if (snapshot.exists) return { id: authUser.uid, ...snapshot.data() }
     const now = Date.now(), workspaceId = randomUUID()
     const user = { name: authUser.displayName || authUser.email.split('@')[0], email: authUser.email.toLowerCase(), role: 'user', active: !authUser.disabled,
-      verifiedAt: authUser.emailVerified ? now : null, workspaceId, sessionVersion: 0, about: '', jobTitle: '', photo: '', createdAt: Date.parse(authUser.metadata.creationTime) || null, lastLoginAt: null }
+      verifiedAt: authUser.emailVerified ? now : null, workspaceId, onboardingComplete: false, sessionVersion: 0, about: '', jobTitle: '', photo: '', createdAt: Date.parse(authUser.metadata.creationTime) || null, lastLoginAt: null }
     transaction.create(ref, user)
     transaction.create(ref.collection('workspaces').doc(workspaceId), { ownerId: authUser.uid, workspaceId, name: `${user.name}'s workspace`, revision: 0, createdAt: now })
     return { id: authUser.uid, ...user }

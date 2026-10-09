@@ -5,8 +5,9 @@ import { authService } from '../services/authService'
 import { setCsrf } from '../services/api'
 import AuthPage from '../pages/AuthPage'
 import App from '../App'
-import { configureWorkspace, refreshWorkspace, closeWorkspace } from '../repositories/workspaceRepositories'
+import { configureWorkspace, refreshWorkspace, closeWorkspace, flushWorkspaceDrafts } from '../repositories/workspaceRepositories'
 import { createHttpWorkspaceAdapter } from '../services/httpWorkspaceAdapter'
+import WorkspaceGate from './WorkspaceGate'
 
 export default function SessionGate() {
   const regression = import.meta.env.DEV && import.meta.env.MODE === 'regression'
@@ -15,7 +16,7 @@ export default function SessionGate() {
   const userId = user?.id
   const userWorkspaceId = user?.workspaceId
   const accept = useCallback(async (next) => { configureWorkspace({ ownerId: next.id, workspaceId: next.workspaceId }, createHttpWorkspaceAdapter()); setUser(next); setError(''); window.location.hash = 'dashboard' }, [])
-  const signOut = useCallback(async () => { try { await authService.logout() } catch (err) { if (err.status !== 401) throw err } closeWorkspace(); setCsrf(); setUser(null); window.location.hash = 'login' }, [])
+  const signOut = useCallback(async () => { await flushWorkspaceDrafts(); try { await authService.logout() } catch (err) { if (err.status !== 401) throw err } closeWorkspace(); setCsrf(); setUser(null); window.location.hash = 'login' }, [])
   useEffect(() => {
     const sync = () => setPublicFlow(/^#(verify-email|reset-password)\?/.test(window.location.hash))
     window.addEventListener('hashchange', sync)
@@ -52,6 +53,6 @@ export default function SessionGate() {
   }, [userId, userWorkspaceId])
   if (!ready) return <div className="auth-main" role="status">Opening Dayora…</div>
   return <MotionConfig reducedMotion="user"><AuthContext.Provider value={{ user, updateUser: (next) => { if (!next) closeWorkspace(); setUser(next) }, signOut }}>
-    {(user || regression) && !publicFlow ? <App key={user?.id || 'regression'} /> : <AuthPage onLogin={accept} connectionError={error} />}
+    {(user || regression) && !publicFlow ? user ? <WorkspaceGate key={user.id} /> : <App key="regression" /> : <AuthPage onLogin={accept} connectionError={error} />}
   </AuthContext.Provider></MotionConfig>
 }
