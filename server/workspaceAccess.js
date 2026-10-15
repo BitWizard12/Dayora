@@ -15,20 +15,12 @@ const summary = (data, role) => ({ id: data.workspaceId, ownerId: data.ownerId, 
 
 // The requested ID is a selector only. Membership and ownership are re-read by
 // every data transaction, including writes racing with member removal.
-export async function resolveWorkspace(user, requested, transaction) {
-  const read = (ref) => transaction ? transaction.get(ref) : ref.get()
+export async function resolveWorkspace(user, requested, _transaction) {
   const personalId = user.personalWorkspaceId || user.workspaceId
   const id = requested || personalId
   identifier.parse(id)
   if (id !== personalId) throw unavailable()
   return { ...user, personalWorkspaceId: personalId, workspaceId: id, workspaceOwnerId: user.id, workspaceType: 'individual', workspaceRole: 'owner' }
-  const ref = teamRef(id)
-  const [workspace, member] = await Promise.all([read(ref), read(ref.collection('members').doc(user.id))])
-  const data = workspace.data(), membership = member.data()
-  if (!data || !membership || !['owner', 'member'].includes(membership.role)) throw unavailable()
-  const owner = await read(userRef(data.ownerId))
-  if (!owner.data()?.active || membership.role === 'owner' && data.ownerId !== user.id) throw unavailable()
-  return { ...user, personalWorkspaceId: personalId, workspaceId: id, workspaceOwnerId: data.ownerId, workspaceType: 'team', workspaceRole: membership.role }
 }
 
 export async function verifyWorkspaceAccess(user, transaction) {
