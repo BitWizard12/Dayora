@@ -20,7 +20,8 @@ export async function resolveWorkspace(user, requested, transaction) {
   const personalId = user.personalWorkspaceId || user.workspaceId
   const id = requested || personalId
   identifier.parse(id)
-  if (id === personalId) return { ...user, personalWorkspaceId: personalId, workspaceId: id, workspaceOwnerId: user.id, workspaceType: 'individual', workspaceRole: 'owner' }
+  if (id !== personalId) throw unavailable()
+  return { ...user, personalWorkspaceId: personalId, workspaceId: id, workspaceOwnerId: user.id, workspaceType: 'individual', workspaceRole: 'owner' }
   const ref = teamRef(id)
   const [workspace, member] = await Promise.all([read(ref), read(ref.collection('members').doc(user.id))])
   const data = workspace.data(), membership = member.data()
@@ -127,8 +128,8 @@ export function createWorkspaceRoutes(auth) {
     await userRef(req.user.id).update({ onboardingComplete: true })
     res.json({ completed: true })
   })
-  router.post('/workspaces', auth.csrf, async (req, res) => { const { name } = z.object({ name: nameSchema }).strict().parse(req.body); res.status(201).json({ workspace: await createTeam(req.user, name) }) })
-  router.post('/workspaces/join', auth.csrf, async (req, res) => { const { token } = z.object({ token: z.string() }).strict().parse(req.body); res.json({ workspace: await joinTeam(req.user, token) }) })
+  router.post('/workspaces', auth.csrf, async () => { throw new ApiError(403, 'PERSONAL_ONLY', 'Dayora uses private personal workspaces only.') })
+  router.post('/workspaces/join', auth.csrf, async () => { throw new ApiError(403, 'PERSONAL_ONLY', 'Dayora uses private personal workspaces only.') })
   router.get('/workspaces/:id/members', async (req, res) => {
     const members = await getFirebase().db.runTransaction(async (tx) => {
       const resolved = await resolveWorkspace(req.user, req.params.id, tx)
