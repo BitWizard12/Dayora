@@ -21,7 +21,8 @@ export async function firebaseGoogleLogin() {
     return await result.user.getIdToken(true)
   } catch (error) {
     if (error?.code === 'auth/popup-closed-by-user') throw new Error('Google sign-in was cancelled.')
-    throw new Error('Unable to sign in with Google. Please try again.')
+    const code = error?.code || 'unknown'
+    throw new Error(`Google sign-in failed (${code}). Please try again.`)
   } finally {
     await signOut(client).catch(() => {})
   }
