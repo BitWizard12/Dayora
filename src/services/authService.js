@@ -1,23 +1,45 @@
-import { api, setCsrf } from './api.js'
-import { firebaseGoogleLogin } from './firebaseAuth.js'
-let generation = 0
-const superseded = () => new DOMException('Session request superseded.', 'AbortError')
-const channel = typeof BroadcastChannel === 'function' ? new BroadcastChannel('dayora-auth') : null
-const notify = () => channel?.postMessage({ type: 'session-changed' })
+import { supabase } from './supabase'
+
+const mapUser = (user) => user ? ({
+  id: user.id,
+  email: user.email || '',
+  name: user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0] || 'Dayora User',
+  photo: user.user_metadata?.avatar_url || '',
+  jobTitle: user.user_metadata?.jobTitle || '',
+  about: user.user_metadata?.about || '',
+  role: 'user',
+  workspaceId: user.id,
+  activeWorkspaceId: user.id,
+  onboardingComplete: true,
+  photoUploadsEnabled: false,
+}) : null
 
 export const authService = {
-  subscribeChanges(listener) { const receive = (event) => { if (event.data?.type === 'session-changed') { generation++; listener() } }; channel?.addEventListener('message', receive); return () => channel?.removeEventListener('message', receive) },
-  async session({ signal } = {}) { const current = generation; const result = await api('/auth/session', { signal }); if (current !== generation || signal?.aborted) throw superseded(); setCsrf(result.csrf); return result.user },
-  async loginWithGoogle() {
-    const current = ++generation
-    const idToken = await firebaseGoogleLogin()
-    if (current !== generation) throw superseded()
-    const result = await api('/auth/login', { method: 'POST', body: { idToken, remember: true } })
-    if (current !== generation) throw superseded()
-    generation++; setCsrf(result.csrf); notify()
-    return result.user
+  subscribeChanges(listener) {
+    const { data } = supabase.auth.onAuthStateChange((_event, session) => listener(mapUser(session?.user)))
+    return () => data.subscription.unsubscribe()
   },
-  async logout() { generation++; await api('/auth/logout', { method: 'POST' }); generation++; setCsrf(); notify() },
-  logoutOthers: () => api('/auth/logout-others', { method: 'POST' }),
-  async profile(input) { const result = await api('/auth/profile', { method: 'PATCH', body: input }); return result.user },
+  async session() {
+    const { data, error } = await supabase.auth.getSession()
+    if (error) throw error
+    return mapUser(data.session?.user)
+  },
+  async loginWithGoogle() {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: window.location.origin },
+    })
+    if (error) throw error
+  },
+  async logout() {
+    const { error } = await supabase.auth.signOut()
+    if (error) throw error
+  },
+  async profile(input) {
+    const { data, error } = await supabase.auth.updateUser({
+      data: { full_name: input.name, jobTitle: input.jobTitle, about: input.about },
+    })
+    if (error) throw error
+    return mapUser(data.user)
+  },
 }
