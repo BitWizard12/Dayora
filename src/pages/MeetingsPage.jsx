@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { AudioLines, Check, ChevronDown, Clock3, FileAudio, FileText, LoaderCircle, Mic, Pause, Play, Plus, Sparkles, Square, Trash2, UploadCloud } from 'lucide-react'
 import SectionTitle from '../components/SectionTitle'
 import useWorkspace from '../hooks/useWorkspace'
-import { api, apiUpload } from '../services/api'
+import { meetingApi, uploadMeetingRecording } from '../services/meetingService'
 import { formatDuration } from '../utils/timer'
 import '../styles/meetings.css'
 
@@ -35,7 +35,7 @@ export default function MeetingsPage({ projects = [], onCreateTask, onSaveWorkLo
   const fileRefs = useRef({})
 
   const load = useCallback(async () => {
-    const result = await api('/meetings', { workspaceId: workspace.id })
+    const result = await meetingApi('/meetings', { workspaceId: workspace.id })
     setMeetings(result.meetings || [])
   }, [workspace.id])
 
@@ -64,7 +64,7 @@ export default function MeetingsPage({ projects = [], onCreateTask, onSaveWorkLo
   const createMeeting = async (event) => {
     event.preventDefault(); setError(''); setNotice('')
     try {
-      const result = await api('/meetings', { method: 'POST', workspaceId: workspace.id, body: {
+      const result = await meetingApi('/meetings', { method: 'POST', workspaceId: workspace.id, body: {
         title, type, attendees: attendees.split(',').map((name) => name.trim()).filter(Boolean), agenda, notes, projectId: projectId || null,
       } })
       setMeetings((current) => [result.meeting, ...current])
@@ -74,7 +74,7 @@ export default function MeetingsPage({ projects = [], onCreateTask, onSaveWorkLo
   }
 
   const patchMeeting = async (id, patch) => {
-    const result = await api('/meetings/' + id, { method: 'PATCH', workspaceId: workspace.id, body: patch })
+    const result = await meetingApi('/meetings/' + id, { method: 'PATCH', workspaceId: workspace.id, body: patch })
     setMeetings((current) => current.map((item) => item.id === id ? result.meeting : item))
     return result.meeting
   }
@@ -87,7 +87,7 @@ export default function MeetingsPage({ projects = [], onCreateTask, onSaveWorkLo
     setBusy(session.meeting.id); setNotice('Uploading the recording for transcription…'); setError('')
     try {
       if (!blob.size) throw new Error('The browser produced an empty recording. Try again or upload an existing file.')
-      await apiUpload('/meetings/' + session.meeting.id + '/transcribe-upload', blob, { workspaceId: workspace.id, filename: 'meeting.' + (blob.type.includes('mp4') ? 'mp4' : 'webm') })
+      await uploadMeetingRecording('/meetings/' + session.meeting.id + '/transcribe-upload', blob, { workspaceId: workspace.id, filename: 'meeting.' + (blob.type.includes('mp4') ? 'mp4' : 'webm') })
       await patchMeeting(session.meeting.id, { endedAt, timerElapsedMs: elapsedMs, timerState: 'stopped' })
       setNotice('Recording uploaded. Transcription is processing; this page will update automatically.')
       try { await onSaveWorkLog?.({ title: session.meeting.title, projectId: session.meeting.projectId, startedAt: session.startedAt, endedAt, segments, duration: elapsedMs }) }
@@ -173,7 +173,7 @@ export default function MeetingsPage({ projects = [], onCreateTask, onSaveWorkLo
     setError(''); setNotice(''); setBusy(meeting.id)
     try {
       if (file.size > 24 * 1024 * 1024) throw new Error('Please upload a recording smaller than 24 MB.')
-      await apiUpload('/meetings/' + meeting.id + '/transcribe-upload', file, { workspaceId: workspace.id, filename: file.name })
+      await uploadMeetingRecording('/meetings/' + meeting.id + '/transcribe-upload', file, { workspaceId: workspace.id, filename: file.name })
       setNotice('Recording uploaded. Transcription is processing; this page will update automatically.')
       await load()
     } catch (reason) { setError(reason.message || 'Upload or transcription failed.') }
@@ -183,7 +183,7 @@ export default function MeetingsPage({ projects = [], onCreateTask, onSaveWorkLo
   const generateMinutes = async (meeting) => {
     setError(''); setNotice(''); setBusy(meeting.id)
     try {
-      const result = await api('/meetings/' + meeting.id + '/summarize', { method: 'POST', workspaceId: workspace.id, body: {} })
+      const result = await meetingApi('/meetings/' + meeting.id + '/summarize', { method: 'POST', workspaceId: workspace.id, body: {} })
       setMeetings((current) => current.map((item) => item.id === meeting.id ? result.meeting : item))
       setNotice('AI minutes generated. Review them before sharing or creating tasks.')
     } catch (reason) { setError(reason.message || 'Could not generate minutes.') }
@@ -219,7 +219,7 @@ export default function MeetingsPage({ projects = [], onCreateTask, onSaveWorkLo
 
   const deleteMeeting = async (meeting) => {
     if (!window.confirm('Delete this meeting, transcript, and minutes? This cannot be undone.')) return
-    try { await api('/meetings/' + meeting.id, { method: 'DELETE', workspaceId: workspace.id }); setMeetings((current) => current.filter((item) => item.id !== meeting.id)) }
+    try { await meetingApi('/meetings/' + meeting.id, { method: 'DELETE', workspaceId: workspace.id }); setMeetings((current) => current.filter((item) => item.id !== meeting.id)) }
     catch (reason) { setError(reason.message || 'Could not delete meeting.') }
   }
 
