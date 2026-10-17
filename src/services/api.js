@@ -18,3 +18,23 @@ export async function api(path, { method = 'GET', body, signal, workspaceId } = 
   }
   return result
 }
+
+
+export async function apiUpload(path, blob, { signal, workspaceId, filename } = {}) {
+  const requestVersion = credentialVersion
+  const headers = {
+    'Content-Type': blob.type || 'application/octet-stream',
+    ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
+    ...(workspaceId ? { 'X-Workspace-Id': workspaceId } : {}),
+    ...(filename ? { 'X-Upload-Filename': filename } : {}),
+  }
+  const response = await fetch(base + '/api' + path, { method: 'POST', credentials: 'include', signal, headers, body: blob })
+  const result = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    const error = new Error(result.error?.message || 'Unable to upload this recording. Please try again.')
+    error.status = response.status; error.code = result.error?.code
+    if (response.status === 401 && requestVersion === credentialVersion && !path.startsWith('/auth/')) window.dispatchEvent(new Event('dayora-session-expired'))
+    throw error
+  }
+  return result
+}
