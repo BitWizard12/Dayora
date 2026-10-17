@@ -20,6 +20,10 @@ services:
         value: smtp
       - key: RATE_LIMIT_STORE
         value: firestore
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_PUBLISHABLE_KEY
+        sync: false
       - key: FIREBASE_PROJECT_ID
         sync: false
       - key: FIREBASE_WEB_API_KEY
