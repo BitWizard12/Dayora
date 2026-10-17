@@ -1,4 +1,5 @@
 import express, { Router } from 'express'
+import { createClient } from '@supabase/supabase-js'
 import { randomUUID } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
@@ -7,16 +8,13 @@ import { join } from 'node:path'
 import { z } from 'zod'
 import { rateLimit } from 'express-rate-limit'
 import { rateLimitStore } from './rateLimitStore.js'
-import { getFirebase } from './firebaseAdmin.js'
-import { workspaceRef, recordsRef } from './firebaseRepositories.js'
-import { resolveWorkspace, verifyWorkspaceAccess } from './workspaceAccess.js'
 import { ApiError } from './errors.js'
 
 const text = z.string().trim().max(10000)
 const dateString = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable()
 const actionItemSchema = z.object({
-  id: z.uuid(), title: z.string().trim().min(1).max(500), description: z.string().max(2000).default(''),
-  assignee: z.string().max(200).nullable().default(null), dueDate: dateString.default(null),
+  id: z.uuid(), title: z.string().trim().min(1).max(300), description: z.string().max(400).default(''),
+  assignee: z.string().max(100).nullable().default(null), dueDate: dateString.default(null),
   priority: z.enum(['Low', 'Medium', 'High', 'Urgent']).default('Medium'),
   linkedTaskId: z.uuid().nullable().default(null), completed: z.boolean().default(false),
 }).strict()
@@ -41,37 +39,85 @@ const updateSchema = z.object({
 }).strict()
 
 export function validateMeetingDraft(input) { return createSchema.parse(input) }
-const meetingCollection = (workspace) => workspaceRef(workspace).collection('meetings')
 const notFound = () => new ApiError(404, 'MEETING_NOT_FOUND', 'Meeting not found in this workspace.')
-async function workspaceFor(req) { return resolveWorkspace(req.user, req.get('X-Workspace-Id') || undefined) }
 const requireAiKey = (env) => {
   if (!env.OPENAI_API_KEY || !env.OPENAI_API_KEY.trim()) throw new ApiError(503, 'AI_NOT_CONFIGURED', 'AI meeting processing is not configured yet. Add OPENAI_API_KEY to the backend environment.')
   return env.OPENAI_API_KEY.trim()
 }
-async function readMeeting(req, id) {
-  const workspace = await workspaceFor(req)
-  return getFirebase().db.runTransaction(async (tx) => {
-    await verifyWorkspaceAccess(workspace, tx)
-    const snapshot = await tx.get(meetingCollection(workspace).doc(id))
-    if (!snapshot.exists) throw notFound()
-    const record = snapshot.data()
-    if (record.ownerId !== workspace.workspaceOwnerId || record.workspaceId !== workspace.workspaceId) throw notFound()
-    return record
-  }, { readOnly: true })
+function createUserClient(token) {
+  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL
+  const key = process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY
+  if (!url || !key) throw new ApiError(503, 'SUPABASE_NOT_CONFIGURED', 'Meeting storage is not configured. Add SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY to the backend environment.')
+  return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }, global: { headers: { Authorization: 'Bearer ' + token } } })
 }
-async function updateMeeting(req, id, change) {
-  const workspace = await workspaceFor(req)
-  return getFirebase().db.runTransaction(async (tx) => {
-    await verifyWorkspaceAccess(workspace, tx)
-    const ref = meetingCollection(workspace).doc(id), snapshot = await tx.get(ref)
-    if (!snapshot.exists) throw notFound()
-    const previous = snapshot.data()
-    if (previous.ownerId !== workspace.workspaceOwnerId || previous.workspaceId !== workspace.workspaceId) throw notFound()
-    const patch = typeof change === 'function' ? await change(tx, workspace, previous) : change
-    const updatedAt = Date.now()
-    tx.update(ref, { ...patch, updatedAt })
-    return { ...previous, ...patch, updatedAt }
+async function authenticateSupabase(req, res, next) {
+  try {
+    const token = /^Bearer\s+(.+)$/i.exec(req.get('authorization') || '')?.[1]
+    if (!token) throw new ApiError(401, 'AUTH_REQUIRED', 'Sign in to access your meetings.')
+    const client = createUserClient(token)
+    const { data, error } = await client.auth.getUser(token)
+    if (error || !data?.user) {
+      if (error && error.status && ![400, 401, 403].includes(error.status)) throw new ApiError(503, 'SUPABASE_AUTH_UNAVAILABLE', 'Authentication is temporarily unavailable. Try again.')
+      throw new ApiError(401, 'AUTH_REQUIRED', 'Your session has expired. Sign in again.')
+    }
+    const workspaceId = req.get('X-Workspace-Id')
+    if (workspaceId && workspaceId !== data.user.id) throw new ApiError(403, 'WORKSPACE_FORBIDDEN', 'You can only access your own workspace.')
+    req.meetingUser = data.user
+    req.meetingSupabase = client
+    next()
+  } catch (error) { next(error) }
+}
+async function readCollection(req, collection) {
+  const { data, error } = await req.meetingSupabase.from('dayora_collections').select('data,updated_at')
+    .eq('user_id', req.meetingUser.id).eq('collection', collection).maybeSingle()
+  if (error) throw new ApiError(503, 'WORKSPACE_DATA_UNAVAILABLE', 'Dayora could not read this workspace data. Check the Supabase table and row-level security configuration.')
+  return { rows: Array.isArray(data?.data) ? data.data : [], updatedAt: data?.updated_at ?? null, exists: Boolean(data) }
+}
+async function writeCollection(req, collection, current, rows) {
+  const table = req.meetingSupabase.from('dayora_collections'), now = new Date().toISOString()
+  if (current.exists) {
+    let query = table.update({ data: rows, updated_at: now }).eq('user_id', req.meetingUser.id).eq('collection', collection)
+    query = current.updatedAt ? query.eq('updated_at', current.updatedAt) : query.is('updated_at', null)
+    const { data, error } = await query.select('user_id').maybeSingle()
+    if (error) throw new ApiError(503, 'WORKSPACE_DATA_UNAVAILABLE', 'Dayora could not save this workspace data.')
+    return Boolean(data)
+  }
+  const { data, error } = await table.insert({ user_id: req.meetingUser.id, collection, data: rows, updated_at: now }).select('user_id').maybeSingle()
+  if (error?.code === '23505') return false
+  if (error) throw new ApiError(503, 'WORKSPACE_DATA_UNAVAILABLE', 'Dayora could not save this workspace data.')
+  return Boolean(data)
+}
+async function mutateMeetings(req, mutate) {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const current = await readCollection(req, 'meetings'), change = mutate(current.rows)
+    if (!change.write) return change.value
+    if (await writeCollection(req, 'meetings', current, change.rows)) return change.value
+    await new Promise((resolve) => setTimeout(resolve, 15 * (attempt + 1)))
+  }
+  throw new ApiError(409, 'MEETINGS_CONFLICT', 'Another meeting update happened at the same time. Refresh the list and try again.')
+}
+function findMeeting(rows, id, userId) {
+  const meeting = rows.find((row) => row.id === id && (!row.ownerId || row.ownerId === userId) && (!row.workspaceId || row.workspaceId === userId))
+  if (!meeting) throw notFound()
+  return meeting
+}
+async function readMeeting(req, id) {
+  const collection = await readCollection(req, 'meetings')
+  return findMeeting(collection.rows, id, req.meetingUser.id)
+}
+async function updateMeeting(req, id, patch) {
+  return mutateMeetings(req, (rows) => {
+    const index = rows.findIndex((row) => row.id === id && (!row.ownerId || row.ownerId === req.meetingUser.id) && (!row.workspaceId || row.workspaceId === req.meetingUser.id))
+    if (index < 0) throw notFound()
+    const updated = { ...rows[index], ...patch, updatedAt: Date.now() }
+    const next = rows.slice(); next[index] = updated
+    return { write: true, rows: next, value: updated }
   })
+}
+async function ensureReference(req, collection, id, message) {
+  if (!id) return
+  const result = await readCollection(req, collection)
+  if (!result.rows.some((row) => row.id === id)) throw new ApiError(400, 'INVALID_LINK', message)
 }
 function normalizeMinutes(raw) {
   const schema = z.object({
@@ -107,7 +153,8 @@ async function extractVideoAudio(buffer, extension) {
     await writeFile(input, buffer, { flag: 'wx' })
     await new Promise((resolve, reject) => {
       const child = spawn('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-i', input, '-vn', '-ac', '1', '-ar', '16000', '-b:a', '64k', '-f', 'mp3', output], { stdio: 'ignore' })
-      child.once('error', reject); child.once('close', (code) => code === 0 ? resolve() : reject(new Error('ffmpeg failed')))
+      child.once('error', reject)
+      child.once('close', (code) => code === 0 ? resolve() : reject(new Error('ffmpeg failed')))
     })
     const audio = await readFile(output)
     if (!audio.length || audio.length > 24 * 1024 * 1024) throw new ApiError(413, 'MEDIA_TOO_LARGE', 'Extracted audio is too large. Use a shorter or more compressed recording.')
@@ -160,82 +207,62 @@ async function summarize(meeting, env) {
   return normalizeMinutes(parsed)
 }
 
-export function createMeetingRoutes(auth, config) {
+export function createMeetingRoutes(config) {
   const router = Router()
   const aiLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 12, store: rateLimitStore(config, 'meeting-ai'), standardHeaders: 'draft-8', legacyHeaders: false })
-  router.use('/meetings', auth.authenticate)
-
+  router.use('/meetings', authenticateSupabase)
   router.get('/meetings', async (req, res) => {
-    const workspace = await workspaceFor(req)
-    const meetings = await getFirebase().db.runTransaction(async (tx) => {
-      await verifyWorkspaceAccess(workspace, tx)
-      const rows = await tx.get(meetingCollection(workspace).orderBy('updatedAt', 'desc').limit(100))
-      return rows.docs.map((row) => row.data()).filter((row) => row.ownerId === workspace.workspaceOwnerId && row.workspaceId === workspace.workspaceId)
-    }, { readOnly: true })
-    res.json({ meetings })
+    const { rows } = await readCollection(req, 'meetings')
+    res.json({ meetings: rows.filter((row) => !row.ownerId || row.ownerId === req.meetingUser.id) })
   })
-
-  router.post('/meetings', auth.csrf, async (req, res) => {
-    const input = createSchema.parse(req.body), workspace = await workspaceFor(req), now = Date.now(), id = randomUUID()
-    const meeting = await getFirebase().db.runTransaction(async (tx) => {
-      await verifyWorkspaceAccess(workspace, tx)
-      if (input.projectId && !(await tx.get(recordsRef(workspace, 'projects').doc(input.projectId))).exists) throw new ApiError(400, 'INVALID_LINK', 'Choose a project in this workspace.')
-      const record = { id, ...input, notes: input.notes || '', transcript: '', transcriptSegments: [], transcriptLanguage: '', minutes: null,
-        status: 'scheduled', startedAt: null, endedAt: null, timerElapsedMs: 0, timerState: 'idle',
-        ownerId: workspace.workspaceOwnerId, workspaceId: workspace.workspaceId, createdAt: now, updatedAt: now }
-      tx.create(meetingCollection(workspace).doc(id), record)
-      return record
-    })
-    res.status(201).json({ meeting })
+  router.post('/meetings', async (req, res) => {
+    const input = createSchema.parse(req.body)
+    await ensureReference(req, 'projects', input.projectId, 'Choose a project in this workspace.')
+    const now = Date.now(), id = randomUUID()
+    const meeting = { id, ...input, notes: input.notes || '', transcript: '', transcriptSegments: [], transcriptLanguage: '', minutes: null,
+      status: 'scheduled', startedAt: null, endedAt: null, timerElapsedMs: 0, timerState: 'idle',
+      ownerId: req.meetingUser.id, workspaceId: req.meetingUser.id, createdAt: now, updatedAt: now }
+    const saved = await mutateMeetings(req, (rows) => ({ write: true, rows: [meeting, ...rows.filter((row) => row.id !== id)], value: meeting }))
+    res.status(201).json({ meeting: saved })
   })
-
-  router.patch('/meetings/:id', auth.csrf, async (req, res) => {
+  router.patch('/meetings/:id', async (req, res) => {
     const id = z.uuid().parse(req.params.id), patch = updateSchema.parse(req.body)
-    const meeting = await updateMeeting(req, id, async (tx, workspace) => {
-      if (patch.projectId && !(await tx.get(recordsRef(workspace, 'projects').doc(patch.projectId))).exists) throw new ApiError(400, 'INVALID_LINK', 'Choose a project in this workspace.')
-      if (patch.minutes) for (const item of patch.minutes.actionItems) if (item.linkedTaskId && !(await tx.get(recordsRef(workspace, 'tasks').doc(item.linkedTaskId))).exists) throw new ApiError(400, 'INVALID_LINK', 'Choose a task in this workspace.')
-      return patch
-    })
-    res.json({ meeting })
+    await ensureReference(req, 'projects', patch.projectId, 'Choose a project in this workspace.')
+    if (patch.minutes) {
+      const tasks = await readCollection(req, 'tasks')
+      for (const item of patch.minutes.actionItems) if (item.linkedTaskId && !tasks.rows.some((task) => task.id === item.linkedTaskId)) throw new ApiError(400, 'INVALID_LINK', 'Choose a task in this workspace.')
+    }
+    res.json({ meeting: await updateMeeting(req, id, patch) })
   })
-
-  router.delete('/meetings/:id', auth.csrf, async (req, res) => {
-    const id = z.uuid().parse(req.params.id), workspace = await workspaceFor(req)
-    await getFirebase().db.runTransaction(async (tx) => {
-      await verifyWorkspaceAccess(workspace, tx)
-      const ref = meetingCollection(workspace).doc(id), snapshot = await tx.get(ref)
-      if (!snapshot.exists || snapshot.data().ownerId !== workspace.workspaceOwnerId || snapshot.data().workspaceId !== workspace.workspaceId) throw notFound()
-      tx.delete(ref)
+  router.delete('/meetings/:id', async (req, res) => {
+    const id = z.uuid().parse(req.params.id)
+    const deleted = await mutateMeetings(req, (rows) => {
+      const record = findMeeting(rows, id, req.meetingUser.id)
+      return { write: true, rows: rows.filter((row) => row.id !== id), value: record }
     })
-    res.json({ deleted: true })
+    res.json({ deleted: true, id: deleted.id })
   })
-
-  router.post('/meetings/:id/transcribe-upload', aiLimiter, auth.csrf, express.raw({ type: ['audio/*', 'video/*', 'application/octet-stream'], limit: '25mb' }), async (req, res) => {
+  router.post('/meetings/:id/transcribe-upload', aiLimiter, express.raw({ type: ['audio/*', 'video/*', 'application/octet-stream'], limit: '25mb' }), async (req, res) => {
     const id = z.uuid().parse(req.params.id), buffer = req.body
     if (!Buffer.isBuffer(buffer) || !buffer.length) throw new ApiError(400, 'EMPTY_UPLOAD', 'Choose a recording to transcribe.')
     if (buffer.length > 24 * 1024 * 1024) throw new ApiError(413, 'MEDIA_TOO_LARGE', 'Recording must be smaller than 24 MB.')
     const details = mimeDetails(req)
     requireAiKey(process.env)
     await updateMeeting(req, id, { status: 'processing', processingError: '' })
-    const pending = await readMeeting(req, id)
-    res.status(202).json({ accepted: true, meeting: pending })
+    res.status(202).json({ accepted: true, meeting: await readMeeting(req, id) })
     void (async () => {
-      try {
-        const result = await transcribe(buffer, details, process.env)
-        await updateMeeting(req, id, { ...result, status: 'completed', processingError: '' })
-      } catch (error) {
+      try { await updateMeeting(req, id, { ...(await transcribe(buffer, details, process.env)), status: 'completed', processingError: '' }) }
+      catch (error) {
         const message = error instanceof ApiError ? error.message : 'Transcription failed. Please try again or upload a shorter recording.'
         await updateMeeting(req, id, { status: 'failed', processingError: message }).catch(() => {})
         console.error(JSON.stringify({ event: 'meeting_transcription_failed', code: error.code || 'TRANSCRIPTION_FAILED' }))
       }
     })()
   })
-
-  router.post('/meetings/:id/summarize', aiLimiter, auth.csrf, async (req, res) => {
+  router.post('/meetings/:id/summarize', aiLimiter, async (req, res) => {
     const id = z.uuid().parse(req.params.id), current = await readMeeting(req, id)
     const minutes = await summarize(current, process.env)
-    const meeting = await updateMeeting(req, id, { minutes, status: 'completed' })
-    res.json({ meeting })
+    res.json({ meeting: await updateMeeting(req, id, { minutes, status: 'completed' }) })
   })
   return router
 }
