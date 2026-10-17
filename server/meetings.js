@@ -21,9 +21,9 @@ const actionItemSchema = z.object({
   linkedTaskId: z.uuid().nullable().default(null), completed: z.boolean().default(false),
 }).strict()
 const minutesSchema = z.object({
-  summary: z.string().max(12000).default(''), discussionPoints: z.array(z.string().max(2000)).max(100).default([]),
-  decisions: z.array(z.string().max(2000)).max(100).default([]), unresolvedQuestions: z.array(z.string().max(2000)).max(100).default([]),
-  actionItems: z.array(actionItemSchema).max(100).default([]),
+  summary: z.string().max(6000).default(''), discussionPoints: z.array(z.string().max(500)).max(30).default([]),
+  decisions: z.array(z.string().max(500)).max(30).default([]), unresolvedQuestions: z.array(z.string().max(500)).max(30).default([]),
+  actionItems: z.array(actionItemSchema).max(30).default([]),
 }).strict()
 const createSchema = z.object({
   title: z.string().trim().min(1).max(200), type: z.enum(['in-person', 'online', 'uploaded']).default('in-person'),
@@ -75,11 +75,11 @@ async function updateMeeting(req, id, change) {
 }
 function normalizeMinutes(raw) {
   const schema = z.object({
-    summary: z.string().max(12000).default(''), discussionPoints: z.array(z.string().max(2000)).max(100).default([]),
-    decisions: z.array(z.string().max(2000)).max(100).default([]), unresolvedQuestions: z.array(z.string().max(2000)).max(100).default([]),
+    summary: z.string().max(6000).default(''), discussionPoints: z.array(z.string().max(500)).max(30).default([]),
+    decisions: z.array(z.string().max(500)).max(30).default([]), unresolvedQuestions: z.array(z.string().max(500)).max(30).default([]),
     actionItems: z.array(z.object({
-      title: z.string().trim().min(1).max(500), description: z.string().max(2000).default(''),
-      assignee: z.string().max(200).nullable().default(null), dueDate: dateString.default(null),
+      title: z.string().trim().min(1).max(300), description: z.string().max(400).default(''),
+      assignee: z.string().max(100).nullable().default(null), dueDate: dateString.default(null),
       priority: z.enum(['Low', 'Medium', 'High', 'Urgent']).default('Medium'),
     }).strict()).max(100).default([]),
   }).strict().parse(raw)
@@ -132,17 +132,17 @@ async function transcribe(buffer, details, env) {
   const payload = await response.json().catch(() => ({}))
   if (!response.ok || typeof payload.text !== 'string') throw new ApiError(502, 'TRANSCRIPTION_FAILED', 'The transcription service could not process this recording. Check provider configuration or try a shorter, clearer recording.')
   return {
-    transcript: payload.text.slice(0, 200000), transcriptLanguage: String(payload.language || '').slice(0, 40),
-    transcriptSegments: Array.isArray(payload.segments) ? payload.segments.slice(0, 5000).map((segment) => ({
+    transcript: payload.text.slice(0, 100000), transcriptLanguage: String(payload.language || '').slice(0, 40),
+    transcriptSegments: Array.isArray(payload.segments) ? payload.segments.slice(0, 100).map((segment) => ({
       start: Math.max(0, Math.round(Number(segment.start || 0) * 1000)), end: Math.max(0, Math.round(Number(segment.end || segment.start || 0) * 1000)),
-      text: String(segment.text || '').slice(0, 2000),
+      text: String(segment.text || '').slice(0, 300),
     })) : [],
   }
 }
 async function summarize(meeting, env) {
   const key = requireAiKey(env)
   if (!meeting.transcript?.trim()) throw new ApiError(400, 'TRANSCRIPT_REQUIRED', 'Transcribe or add a transcript before generating minutes.')
-  const source = { title: meeting.title, type: meeting.type, date: meeting.createdAt ? new Date(meeting.createdAt).toISOString() : '', attendees: meeting.attendees || [], agenda: meeting.agenda || '', notes: meeting.notes || '', transcript: meeting.transcript.slice(0, 150000) }
+  const source = { title: meeting.title, type: meeting.type, date: meeting.createdAt ? new Date(meeting.createdAt).toISOString() : '', attendees: meeting.attendees || [], agenda: meeting.agenda || '', notes: meeting.notes || '', transcript: meeting.transcript.slice(0, 70000) }
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -216,15 +216,19 @@ export function createMeetingRoutes(auth, config) {
     if (buffer.length > 24 * 1024 * 1024) throw new ApiError(413, 'MEDIA_TOO_LARGE', 'Recording must be smaller than 24 MB.')
     const details = mimeDetails(req)
     requireAiKey(process.env)
-    await updateMeeting(req, id, { status: 'processing' })
-    try {
-      const result = await transcribe(buffer, details, process.env)
-      const meeting = await updateMeeting(req, id, { ...result, status: 'completed' })
-      res.json({ meeting })
-    } catch (error) {
-      await updateMeeting(req, id, { status: 'failed' }).catch(() => {})
-      throw error
-    }
+    await updateMeeting(req, id, { status: 'processing', processingError: '' })
+    const pending = await readMeeting(req, id)
+    res.status(202).json({ accepted: true, meeting: pending })
+    void (async () => {
+      try {
+        const result = await transcribe(buffer, details, process.env)
+        await updateMeeting(req, id, { ...result, status: 'completed', processingError: '' })
+      } catch (error) {
+        const message = error instanceof ApiError ? error.message : 'Transcription failed. Please try again or upload a shorter recording.'
+        await updateMeeting(req, id, { status: 'failed', processingError: message }).catch(() => {})
+        console.error(JSON.stringify({ event: 'meeting_transcription_failed', code: error.code || 'TRANSCRIPTION_FAILED' }))
+      }
+    })()
   })
 
   router.post('/meetings/:id/summarize', aiLimiter, auth.csrf, async (req, res) => {

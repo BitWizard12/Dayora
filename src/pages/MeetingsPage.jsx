@@ -46,6 +46,12 @@ export default function MeetingsPage({ projects = [], onCreateTask, onSaveWorkLo
   }, [load])
 
   useEffect(() => {
+    if (!meetings.some((meeting) => meeting.status === 'processing')) return undefined
+    const poll = window.setInterval(() => { load().catch(() => {}) }, 3000)
+    return () => window.clearInterval(poll)
+  }, [meetings, load])
+
+  useEffect(() => {
     if (!activeId) return undefined
     const timer = window.setInterval(() => {
       const session = recorderRef.current
@@ -81,8 +87,8 @@ export default function MeetingsPage({ projects = [], onCreateTask, onSaveWorkLo
     try {
       if (!blob.size) throw new Error('The browser produced an empty recording. Try again or upload an existing file.')
       await apiUpload('/meetings/' + session.meeting.id + '/transcribe-upload', blob, { workspaceId: workspace.id, filename: 'meeting.' + (blob.type.includes('mp4') ? 'mp4' : 'webm') })
-      await patchMeeting(session.meeting.id, { endedAt, timerElapsedMs: elapsedMs, timerState: 'stopped', status: 'completed' })
-      setNotice('Recording transcribed and saved. Review the transcript, then generate meeting minutes.')
+      await patchMeeting(session.meeting.id, { endedAt, timerElapsedMs: elapsedMs, timerState: 'stopped' })
+      setNotice('Recording uploaded. Transcription is processing; this page will update automatically.')
       try { await onSaveWorkLog?.({ title: session.meeting.title, projectId: session.meeting.projectId, startedAt: session.startedAt, endedAt, segments, duration: elapsedMs }) }
       catch { setNotice('Transcript saved. The meeting time could not be added to Work Log; please check the Work Log.') }
     } catch (reason) {
@@ -167,7 +173,7 @@ export default function MeetingsPage({ projects = [], onCreateTask, onSaveWorkLo
     try {
       if (file.size > 24 * 1024 * 1024) throw new Error('Please upload a recording smaller than 24 MB.')
       await apiUpload('/meetings/' + meeting.id + '/transcribe-upload', file, { workspaceId: workspace.id, filename: file.name })
-      setNotice('Recording transcribed. Generate minutes when you are ready.')
+      setNotice('Recording uploaded. Transcription is processing; this page will update automatically.')
       await load()
     } catch (reason) { setError(reason.message || 'Upload or transcription failed.') }
     finally { setBusy(''); if (fileRefs.current[meeting.id]) fileRefs.current[meeting.id].value = '' }
@@ -241,6 +247,7 @@ export default function MeetingsPage({ projects = [], onCreateTask, onSaveWorkLo
     <div className="meeting-list">{meetings.map((meeting) => <article className="panel meeting-card" key={meeting.id}>
       <div className="meeting-card-header"><div className="meeting-card-icon"><FileText size={19} /></div><div className="meeting-card-title"><div><span className="meeting-type">{prettyType(meeting.type)}</span><span className={'meeting-status meeting-status--' + (meeting.status || 'scheduled')}>{meeting.status || 'scheduled'}</span></div><h3>{meeting.title}</h3><p>{readableDate(meeting.createdAt)}{meeting.attendees?.length ? ' · ' + meeting.attendees.join(', ') : ''}</p></div><button className="icon-btn" aria-label={'Delete ' + meeting.title} onClick={() => deleteMeeting(meeting)}><Trash2 size={17} /></button></div>
       {meeting.agenda && <div className="meeting-meta"><strong>Agenda</strong><p>{meeting.agenda}</p></div>}
+      {meeting.status === 'failed' && meeting.processingError && <div className="meeting-message meeting-message--error">{meeting.processingError}</div>}
       {meeting.projectId && <p className="meeting-project">Project: {projects.find((project) => project.id === meeting.projectId)?.name || 'Project'}</p>}
       {activeId === meeting.id ? <div className="meeting-recording-panel"><div className="meeting-recording-state"><span className="meeting-recording-dot" /><strong>{recorderRef.current?.runningSince ? 'Recording in progress' : 'Recording paused'}</strong><span>{durationText(elapsed)}</span></div><p>{liveText || 'Audio is being captured. The final transcript is created when you stop.'}</p><div className="meeting-controls">{recorderRef.current?.runningSince ? <button className="button button--secondary" type="button" onClick={pauseRecording}><Pause size={15} /> Pause</button> : <button className="button button--secondary" type="button" onClick={resumeRecording}><Play size={15} /> Resume</button>}<button className="button button--primary" type="button" onClick={stopRecording}><Square size={14} /> Stop and transcribe</button></div></div> : <div className="meeting-actions">
         {meeting.type !== 'uploaded' && <button className="button button--secondary" type="button" disabled={Boolean(activeId) || Boolean(busy)} onClick={() => startRecording(meeting)}><Mic size={15} /> Record live</button>}

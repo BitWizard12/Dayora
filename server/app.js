@@ -31,8 +31,8 @@ export function createApp({ config, routes = [], readiness = createReadinessProb
     if (config.NODE_ENV === 'production' && !req.secure) return next(new ApiError(400, 'HTTPS_REQUIRED', 'HTTPS is required.'))
     if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) && req.get('origin') !== config.APP_ORIGIN) return next(new ApiError(403, 'ORIGIN_REJECTED', 'Request origin is not allowed.'))
     if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
-      const uploadPath = /^\\/(?:api\\/)?meetings\\/[^/]+\\/transcribe-upload$/.test(req.path)
-      const uploadType = /^(audio|video)\\//.test(req.get('content-type') || '') || (req.get('content-type') || '').startsWith('application/octet-stream')
+      const uploadPath = /^\/(?:api\/)?meetings\/[^/]+\/transcribe-upload$/.test(req.path)
+      const uploadType = /^(audio|video)\//.test(req.get('content-type') || '') || (req.get('content-type') || '').startsWith('application/octet-stream')
       if (!req.is('application/json') && !(uploadPath && uploadType)) return next(new ApiError(415, 'JSON_REQUIRED', 'Use JSON for API mutations, or an audio/video body for meeting uploads.'))
     }
     next()

@@ -16,10 +16,10 @@ Add OPENAI_API_KEY as a secret environment variable on the Express/Render servic
 Without a key, manual meeting records still work, while transcription and AI summary endpoints return a setup-required error. AI calls may incur provider charges; they are user-triggered and rate-limited.
 
 ## Upload limits and retention
-- Uploads are limited to 24 MB; compress or split longer recordings before upload.
+- Uploads are limited to 24 MB; compress or split longer recordings before upload. Transcription runs asynchronously after the upload is accepted.
 - Supported formats: MP3, WAV, M4A, AAC, OGG, WebM, MP4, MOV, and MKV. Video audio extraction requires ffmpeg on the backend host; if unavailable, upload audio only.
 - Original media is processed in memory or a temporary directory and removed after processing. Dayora stores metadata, transcript text/segments, and minutes in the workspace Firestore meetings subcollection.
-- Transcript text is capped at 200,000 characters and timestamp segments at 5,000.
+- Transcript text is capped at 100,000 characters and timestamp segments at 100 to keep each Firestore record within size limits.
 - Browser capture requires explicit user action and participant consent. Online capture requires tab/screen sharing with audio enabled; microphone-only recording cannot capture remote audio heard only through headphones.
 - Browser live speech preview uses the Web Speech API when available. The server-generated transcript after stopping is the persisted transcript of record.
 - AI minutes are a draft. Review names, decisions, assignees, and due dates before sharing.
