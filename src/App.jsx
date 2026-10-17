@@ -93,7 +93,10 @@ function App() {
       if (item.projectId && projects.some((p) => p.id === item.projectId)) openProject(item.projectId)
     } catch {}
   }
-  const createMeetingTask = useCallback((item) => workspaceRepositories.tasks.createTask({ title: item.title, description: item.description || '', status: 'To do', priority: item.priority || 'Medium', dueDate: item.dueDate || null, projectId: item.projectId || null }), [])
+  const createMeetingTask = useCallback((item, context) => workspaceRepositories.tasks.createMeetingActionTask({
+    title: item.title, description: item.description || '', status: 'To do', priority: item.priority || 'Medium',
+    dueDate: item.dueDate || null, projectId: item.projectId || null,
+  }, context?.meetingId, context?.actionItemId), [])
   const saveMeetingWorkLog = useCallback((entry) => workspaceRepositories.timeEntries.create({ projectId: entry.projectId || null, taskId: null, title: 'Meeting: ' + entry.title, note: 'Meeting recording and transcription session.', label: 'Meeting', startedAt: entry.startedAt, endedAt: entry.endedAt, runningSince: null, segments: entry.segments, duration: entry.duration }), [])
   const pageTitle = page === 'admin' ? 'Administration' : pages.find((item) => item.id === page)?.label || 'Dashboard'
   const clearNotifications = () => { workspaceRepositories.notifications.markAllRead().catch(() => {}) }
