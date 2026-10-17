@@ -81,7 +81,7 @@ function normalizeMinutes(raw) {
       title: z.string().trim().min(1).max(300), description: z.string().max(400).default(''),
       assignee: z.string().max(100).nullable().default(null), dueDate: dateString.default(null),
       priority: z.enum(['Low', 'Medium', 'High', 'Urgent']).default('Medium'),
-    }).strict()).max(100).default([]),
+    }).strict()).max(30).default([]),
   }).strict().parse(raw)
   return { ...schema, actionItems: schema.actionItems.map((item) => ({ ...item, id: randomUUID(), linkedTaskId: null, completed: false })) }
 }
