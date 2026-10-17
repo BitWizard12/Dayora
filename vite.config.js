@@ -23,6 +23,7 @@ export default defineConfig({
         codeSplitting: {
           groups: [
             { name: 'timezone-vendor', test: /node_modules[\\/](?:@js-temporal[\\/]polyfill|jsbi)[\\/]/, priority: 20 },
+            { name: 'supabase-vendor', test: /node_modules[\\/](?:@supabase[\\/]supabase-js|@supabase[\\/].+)[\\/]/, priority: 18 },
             { name: 'firebase-auth-vendor', test: /node_modules[\\/](?:firebase|@firebase)[\\/]/, priority: 15 },
           ],
         },
