@@ -42,7 +42,8 @@ export function createWorkspaceRepositories(scope = localScope, adapter = localS
     if (!title) throw new Error('A task name is required.')
     return { ...validateTask({ ...input, title, priority: input.priority || 'Medium', status: input.status || 'To do',
       dueDate: input.dueDate === undefined ? resolveTaskDueDate(input.due || 'In 3 days') : input.dueDate }),
-      assignees: input.assignees || (local ? ['NC'] : []), assigneeIds: input.assigneeIds || [], ...(input.accountAssigneeIds !== undefined ? { accountAssigneeIds: input.accountAssigneeIds } : {}), comments: 0 }
+      assignees: input.assignees || (local ? ['NC'] : []), assigneeIds: input.assigneeIds || [], ...(input.accountAssigneeIds !== undefined ? { accountAssigneeIds: input.accountAssigneeIds } : {}), comments: 0,
+      meetingActionKey: typeof input.meetingActionKey === 'string' && input.meetingActionKey ? input.meetingActionKey : null }
   }
   tasks.saveTask = async (input, id) => {
     const fields = taskInput(input)
@@ -54,6 +55,14 @@ export function createWorkspaceRepositories(scope = localScope, adapter = localS
     return tasks.create({ ...fields, ...assignment, ...completionFields(null, fields.status) })
   }
   tasks.createTask = (input) => tasks.saveTask(input)
+  tasks.createMeetingActionTask = async (input, meetingId, actionItemId) => {
+    if (!meetingId || !actionItemId) throw new Error('Meeting and action item IDs are required.')
+    const meetingActionKey = `${meetingId}:${actionItemId}`
+    await tasks.load()
+    const existing = tasks.getSnapshot().data.find((task) => task.meetingActionKey === meetingActionKey)
+    if (existing) return existing
+    return tasks.saveTask({ ...input, meetingActionKey })
+  }
   const assignmentFields = (ids) => {
     if (!Array.isArray(ids)) throw new Error('Task assignees must be a list of workspace member IDs.')
     const unique = [...new Set(ids)]
