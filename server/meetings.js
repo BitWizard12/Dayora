@@ -27,7 +27,7 @@ const minutesSchema = z.object({
 }).strict()
 const createSchema = z.object({
   title: z.string().trim().min(1).max(200), type: z.enum(['in-person', 'online', 'uploaded']).default('in-person'),
-  attendees: z.array(z.string().trim().min(1).max(200)).max(50).default([]), agenda: text.default(''),
+  attendees: z.array(z.string().trim().min(1).max(200)).max(50).default([]), agenda: text.default(''), notes: text.default(''),
   projectId: z.uuid().nullable().default(null),
 }).strict()
 const updateSchema = z.object({
@@ -180,7 +180,7 @@ export function createMeetingRoutes(auth, config) {
     const meeting = await getFirebase().db.runTransaction(async (tx) => {
       await verifyWorkspaceAccess(workspace, tx)
       if (input.projectId && !(await tx.get(recordsRef(workspace, 'projects').doc(input.projectId))).exists) throw new ApiError(400, 'INVALID_LINK', 'Choose a project in this workspace.')
-      const record = { id, ...input, notes: '', transcript: '', transcriptSegments: [], transcriptLanguage: '', minutes: null,
+      const record = { id, ...input, notes: input.notes || '', transcript: '', transcriptSegments: [], transcriptLanguage: '', minutes: null,
         status: 'scheduled', startedAt: null, endedAt: null, timerElapsedMs: 0, timerState: 'idle',
         ownerId: workspace.workspaceOwnerId, workspaceId: workspace.workspaceId, createdAt: now, updatedAt: now }
       tx.create(meetingCollection(workspace).doc(id), record)

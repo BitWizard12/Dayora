@@ -18,6 +18,7 @@ export default function MeetingsPage({ projects = [], onCreateTask, onSaveWorkLo
   const [type, setType] = useState('in-person')
   const [attendees, setAttendees] = useState('')
   const [agenda, setAgenda] = useState('')
+  const [notes, setNotes] = useState('')
   const [projectId, setProjectId] = useState('')
   const [consent, setConsent] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -64,10 +65,10 @@ export default function MeetingsPage({ projects = [], onCreateTask, onSaveWorkLo
     event.preventDefault(); setError(''); setNotice('')
     try {
       const result = await api('/meetings', { method: 'POST', workspaceId: workspace.id, body: {
-        title, type, attendees: attendees.split(',').map((name) => name.trim()).filter(Boolean), agenda, projectId: projectId || null,
+        title, type, attendees: attendees.split(',').map((name) => name.trim()).filter(Boolean), agenda, notes, projectId: projectId || null,
       } })
       setMeetings((current) => [result.meeting, ...current])
-      setTitle(''); setAttendees(''); setAgenda(''); setProjectId('')
+      setTitle(''); setAttendees(''); setAgenda(''); setNotes(''); setProjectId('')
       setNotice('Meeting created. You can record it or upload an existing recording.')
     } catch (reason) { setError(reason.message || 'Could not create meeting.') }
   }
@@ -236,6 +237,7 @@ export default function MeetingsPage({ projects = [], onCreateTask, onSaveWorkLo
         <label>Attendees<input value={attendees} onChange={(event) => setAttendees(event.target.value)} placeholder="Names separated by commas" /></label>
         <label>Project (optional)<select value={projectId} onChange={(event) => setProjectId(event.target.value)}><option value="">No project</option>{projects.map((project) => <option value={project.id} key={project.id}>{project.name}</option>)}</select></label>
         <label className="meeting-wide">Agenda<textarea value={agenda} onChange={(event) => setAgenda(event.target.value)} rows={2} placeholder="What should the meeting cover?" /></label>
+        <label className="meeting-wide">Initial notes (optional)<textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={3} placeholder="Capture context or notes before the meeting starts." /></label>
       </div>
       <button className="button button--primary" type="submit"><Plus size={16} /> Create meeting</button>
     </form>
@@ -247,6 +249,7 @@ export default function MeetingsPage({ projects = [], onCreateTask, onSaveWorkLo
     <div className="meeting-list">{meetings.map((meeting) => <article className="panel meeting-card" key={meeting.id}>
       <div className="meeting-card-header"><div className="meeting-card-icon"><FileText size={19} /></div><div className="meeting-card-title"><div><span className="meeting-type">{prettyType(meeting.type)}</span><span className={'meeting-status meeting-status--' + (meeting.status || 'scheduled')}>{meeting.status || 'scheduled'}</span></div><h3>{meeting.title}</h3><p>{readableDate(meeting.createdAt)}{meeting.attendees?.length ? ' · ' + meeting.attendees.join(', ') : ''}</p></div><button className="icon-btn" aria-label={'Delete ' + meeting.title} onClick={() => deleteMeeting(meeting)}><Trash2 size={17} /></button></div>
       {meeting.agenda && <div className="meeting-meta"><strong>Agenda</strong><p>{meeting.agenda}</p></div>}
+      {meeting.notes && <div className="meeting-meta"><strong>Notes</strong><p>{meeting.notes}</p></div>}
       {meeting.status === 'failed' && meeting.processingError && <div className="meeting-message meeting-message--error">{meeting.processingError}</div>}
       {meeting.projectId && <p className="meeting-project">Project: {projects.find((project) => project.id === meeting.projectId)?.name || 'Project'}</p>}
       {activeId === meeting.id ? <div className="meeting-recording-panel"><div className="meeting-recording-state"><span className="meeting-recording-dot" /><strong>{recorderRef.current?.runningSince ? 'Recording in progress' : 'Recording paused'}</strong><span>{durationText(elapsed)}</span></div><p>{liveText || 'Audio is being captured. The final transcript is created when you stop.'}</p><div className="meeting-controls">{recorderRef.current?.runningSince ? <button className="button button--secondary" type="button" onClick={pauseRecording}><Pause size={15} /> Pause</button> : <button className="button button--secondary" type="button" onClick={resumeRecording}><Play size={15} /> Resume</button>}<button className="button button--primary" type="button" onClick={stopRecording}><Square size={14} /> Stop and transcribe</button></div></div> : <div className="meeting-actions">
