@@ -32,3 +32,9 @@ services:
         sync: false
       - key: MAIL_FROM
         sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_TRANSCRIPTION_MODEL
+        value: whisper-1
+      - key: OPENAI_MEETING_MODEL
+        value: gpt-4o-mini
