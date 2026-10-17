@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { AudioLines, Check, ChevronDown, Clock3, FileAudio, FileText, LoaderCircle, Mic, Pause, Play, Plus, Sparkles, Square, Trash2, UploadCloud } from 'lucide-react'
+import { AudioLines, Check, ChevronDown, Clock3, FileAudio, FileText, LoaderCircle, Mic, Pause, Play, Plus, Printer, Sparkles, Square, Trash2, UploadCloud } from 'lucide-react'
 import SectionTitle from '../components/SectionTitle'
 import useWorkspace from '../hooks/useWorkspace'
 import { meetingApi, uploadMeetingRecording } from '../services/meetingService'
@@ -10,6 +10,7 @@ const emptyMinutes = { summary: '', discussionPoints: [], decisions: [], unresol
 const prettyType = (type) => type === 'in-person' ? 'In person' : type === 'online' ? 'Online' : 'Uploaded recording'
 const readableDate = (value) => new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' }).format(value || Date.now())
 const durationText = (ms) => formatDuration(Math.max(0, ms || 0))
+const localDateTime = () => { const date = new Date(); date.setMinutes(date.getMinutes() - date.getTimezoneOffset()); return date.toISOString().slice(0, 16) }
 
 export default function MeetingsPage({ projects = [], onCreateTask, onSaveWorkLog }) {
   const { workspace } = useWorkspace()
@@ -19,6 +20,10 @@ export default function MeetingsPage({ projects = [], onCreateTask, onSaveWorkLo
   const [attendees, setAttendees] = useState('')
   const [agenda, setAgenda] = useState('')
   const [notes, setNotes] = useState('')
+  const [meetingAt, setMeetingAt] = useState(localDateTime)
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [printId, setPrintId] = useState('')
   const [projectId, setProjectId] = useState('')
   const [consent, setConsent] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -65,10 +70,10 @@ export default function MeetingsPage({ projects = [], onCreateTask, onSaveWorkLo
     event.preventDefault(); setError(''); setNotice('')
     try {
       const result = await meetingApi('/meetings', { method: 'POST', workspaceId: workspace.id, body: {
-        title, type, attendees: attendees.split(',').map((name) => name.trim()).filter(Boolean), agenda, notes, projectId: projectId || null,
+        title, type, attendees: attendees.split(',').map((name) => name.trim()).filter(Boolean), agenda, notes, meetingAt: meetingAt ? new Date(meetingAt).getTime() : Date.now(), projectId: projectId || null,
       } })
       setMeetings((current) => [result.meeting, ...current])
-      setTitle(''); setAttendees(''); setAgenda(''); setNotes(''); setProjectId('')
+      setTitle(''); setAttendees(''); setAgenda(''); setNotes(''); setMeetingAt(localDateTime()); setProjectId('')
       setNotice('Meeting created. You can record it or upload an existing recording.')
     } catch (reason) { setError(reason.message || 'Could not create meeting.') }
   }
@@ -217,11 +222,24 @@ export default function MeetingsPage({ projects = [], onCreateTask, onSaveWorkLo
     finally { setBusy('') }
   }
 
+  const createManualMinutes = async (meeting) => {
+    const minutes = { summary: '', discussionPoints: [], decisions: [], unresolvedQuestions: [], actionItems: [] }
+    try { await patchMeeting(meeting.id, { minutes }); setMinutesDraft(minutes); setEditingMinutesId(meeting.id) }
+    catch (reason) { setError(reason.message || 'Could not create meeting minutes.') }
+  }
+  const printMinutes = (meeting) => { setPrintId(meeting.id); window.setTimeout(() => window.print(), 100) }
+
   const deleteMeeting = async (meeting) => {
     if (!window.confirm('Delete this meeting, transcript, and minutes? This cannot be undone.')) return
     try { await meetingApi('/meetings/' + meeting.id, { method: 'DELETE', workspaceId: workspace.id }); setMeetings((current) => current.filter((item) => item.id !== meeting.id)) }
     catch (reason) { setError(reason.message || 'Could not delete meeting.') }
   }
+
+  const visibleMeetings = meetings.filter((meeting) => {
+    const query = search.trim().toLowerCase()
+    const matchesSearch = !query || [meeting.title, meeting.agenda, meeting.notes, ...(meeting.attendees || [])].join(' ').toLowerCase().includes(query)
+    return matchesSearch && (statusFilter === 'all' || meeting.status === statusFilter)
+  })
 
   return <section className="page-content meetings-page">
     <SectionTitle title="AI Meeting Assistant" description="Record or upload a meeting, transcribe the discussion, and turn reviewed minutes into action." actions={<span className="meeting-ai-label"><Sparkles size={15} /> AI-powered</span>} />
@@ -234,6 +252,7 @@ export default function MeetingsPage({ projects = [], onCreateTask, onSaveWorkLo
       <div className="meeting-form-grid">
         <label>Meeting title<input required maxLength={200} value={title} onChange={(event) => setTitle(event.target.value)} placeholder="e.g. Weekly project review" /></label>
         <label>Meeting type<select value={type} onChange={(event) => setType(event.target.value)}><option value="in-person">In-person</option><option value="online">Online meeting / shared tab audio</option><option value="uploaded">Upload an existing recording</option></select></label>
+        <label>Meeting date and time<input type="datetime-local" value={meetingAt} onChange={(event) => setMeetingAt(event.target.value)} required /></label>
         <label>Attendees<input value={attendees} onChange={(event) => setAttendees(event.target.value)} placeholder="Names separated by commas" /></label>
         <label>Project (optional)<select value={projectId} onChange={(event) => setProjectId(event.target.value)}><option value="">No project</option>{projects.map((project) => <option value={project.id} key={project.id}>{project.name}</option>)}</select></label>
         <label className="meeting-wide">Agenda<textarea value={agenda} onChange={(event) => setAgenda(event.target.value)} rows={2} placeholder="What should the meeting cover?" /></label>
@@ -243,11 +262,12 @@ export default function MeetingsPage({ projects = [], onCreateTask, onSaveWorkLo
     </form>
 
     <div className="meeting-consent"><label><input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} /> I confirm participants have been informed and appropriate consent has been obtained before recording.</label><span>Required for live capture</span></div>
-    <div className="meeting-list-heading"><div><h2>Your meetings</h2><p>Meeting records are private to the selected workspace.</p></div><span>{meetings.length} {meetings.length === 1 ? 'meeting' : 'meetings'}</span></div>
+    <div className="meeting-list-heading"><div><h2>Your meetings</h2><p>Meeting records are private to the selected workspace.</p></div><div className="meeting-list-tools"><input type="search" aria-label="Search meetings" placeholder="Search meetings…" value={search} onChange={(event) => setSearch(event.target.value)} /><select aria-label="Filter by status" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="all">All statuses</option><option value="scheduled">Scheduled</option><option value="recording">Recording</option><option value="processing">Processing</option><option value="completed">Completed</option><option value="failed">Failed</option></select><span>{visibleMeetings.length} {visibleMeetings.length === 1 ? 'meeting' : 'meetings'}</span></div></div>
     {loading && <div className="panel meeting-empty" role="status"><LoaderCircle className="meeting-spin" size={22} /> Loading meetings…</div>}
     {!loading && !meetings.length && <div className="panel meeting-empty"><Mic size={30} /><h3>Your meeting space is ready</h3><p>Create a meeting above, then record it or upload an existing file to begin.</p></div>}
-    <div className="meeting-list">{meetings.map((meeting) => <article className="panel meeting-card" key={meeting.id}>
-      <div className="meeting-card-header"><div className="meeting-card-icon"><FileText size={19} /></div><div className="meeting-card-title"><div><span className="meeting-type">{prettyType(meeting.type)}</span><span className={'meeting-status meeting-status--' + (meeting.status || 'scheduled')}>{meeting.status || 'scheduled'}</span></div><h3>{meeting.title}</h3><p>{readableDate(meeting.createdAt)}{meeting.attendees?.length ? ' · ' + meeting.attendees.join(', ') : ''}</p></div><button className="icon-btn" aria-label={'Delete ' + meeting.title} onClick={() => deleteMeeting(meeting)}><Trash2 size={17} /></button></div>
+    {!loading && meetings.length > 0 && !visibleMeetings.length && <div className="panel meeting-empty"><FileText size={28} /><h3>No matching meetings</h3><p>Try a different search or status filter.</p></div>}
+    <div className="meeting-list">{visibleMeetings.map((meeting) => <article className={'panel meeting-card' + (printId === meeting.id ? ' meeting-card--printing' : '')} key={meeting.id}>
+      <div className="meeting-card-header"><div className="meeting-card-icon"><FileText size={19} /></div><div className="meeting-card-title"><div><span className="meeting-type">{prettyType(meeting.type)}</span><span className={'meeting-status meeting-status--' + (meeting.status || 'scheduled')}>{meeting.status || 'scheduled'}</span></div><h3>{meeting.title}</h3><p>{readableDate(meeting.meetingAt || meeting.createdAt)}{meeting.attendees?.length ? ' · ' + meeting.attendees.join(', ') : ''}</p></div><button className="icon-btn" aria-label={'Delete ' + meeting.title} onClick={() => deleteMeeting(meeting)}><Trash2 size={17} /></button></div>
       {meeting.agenda && <div className="meeting-meta"><strong>Agenda</strong><p>{meeting.agenda}</p></div>}
       {meeting.notes && <div className="meeting-meta"><strong>Notes</strong><p>{meeting.notes}</p></div>}
       {meeting.status === 'failed' && meeting.processingError && <div className="meeting-message meeting-message--error">{meeting.processingError}</div>}
@@ -257,10 +277,11 @@ export default function MeetingsPage({ projects = [], onCreateTask, onSaveWorkLo
         <button className="button button--secondary" type="button" disabled={Boolean(busy)} onClick={() => fileRefs.current[meeting.id]?.click()}><UploadCloud size={15} /> Upload audio/video</button>
         <input ref={(node) => { fileRefs.current[meeting.id] = node }} className="meeting-file-input" type="file" accept="audio/*,video/*,.mp3,.wav,.m4a,.aac,.ogg,.webm,.mp4,.mov,.mkv" onChange={(event) => uploadFile(meeting, event.target.files?.[0])} />
         <button className="button button--primary" type="button" disabled={Boolean(busy) || !meeting.transcript} onClick={() => generateMinutes(meeting)}><Sparkles size={15} /> {busy === meeting.id ? 'Processing…' : 'Generate minutes'}</button>
+        {!meeting.minutes && <button className="button button--secondary" type="button" disabled={Boolean(busy)} onClick={() => createManualMinutes(meeting)}><FileText size={15} /> Write minutes manually</button>}
       </div>}
       {busy === meeting.id && <p className="meeting-processing" role="status"><LoaderCircle className="meeting-spin" size={16} /> Processing may take a little time. Please keep this page open.</p>}
       {meeting.transcript && <details className="meeting-transcript"><summary><FileAudio size={16} /> Transcript <ChevronDown size={15} /></summary><p className="meeting-transcript-text">{meeting.transcript}</p>{meeting.transcriptSegments?.length > 0 && <div className="meeting-segments">{meeting.transcriptSegments.slice(0, 200).map((segment, index) => <p key={index}><time>{durationText(segment.start)}</time>{segment.text}</p>)}</div>}</details>}
-      {meeting.minutes && <section className="meeting-minutes"><div className="meeting-minutes-heading"><div><span className="meeting-eyebrow">AI-GENERATED DRAFT</span><h4>Minutes of Meeting</h4></div><button className="button button--secondary" type="button" onClick={() => editMinutes(meeting)}><FileText size={14} /> Edit minutes</button></div>
+      {meeting.minutes && <section className="meeting-minutes"><div className="meeting-minutes-heading"><div><span className="meeting-eyebrow">AI-GENERATED DRAFT</span><h4>Minutes of Meeting</h4></div><div className="meeting-controls"><button className="button button--secondary" type="button" onClick={() => printMinutes(meeting)}><Printer size={14} /> Print</button><button className="button button--secondary" type="button" onClick={() => editMinutes(meeting)}><FileText size={14} /> Edit minutes</button></div></div>
         {editingMinutesId === meeting.id ? <div className="meeting-minutes-editor">
           <label>Summary<textarea rows={4} value={minutesDraft.summary || ''} onChange={(event) => setMinutesDraft((draft) => ({ ...draft, summary: event.target.value }))} /></label>
           {['discussionPoints', 'decisions', 'unresolvedQuestions'].map((field) => <label key={field}>{field === 'discussionPoints' ? 'Discussion points' : field === 'decisions' ? 'Decisions' : 'Unresolved questions'}<textarea rows={3} value={(minutesDraft[field] || []).join('\n')} onChange={(event) => setMinutesDraft((draft) => ({ ...draft, [field]: event.target.value.split('\n').filter(Boolean) }))} placeholder="One item per line" /></label>)}
