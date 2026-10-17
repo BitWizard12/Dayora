@@ -252,7 +252,7 @@ export default function MeetingsPage({ projects = [], onCreateTask, onSaveWorkLo
     <SectionTitle title="AI Meeting Assistant" description="Record or upload a meeting, transcribe the discussion, and turn reviewed minutes into action." actions={<span className="meeting-ai-label"><Sparkles size={15} /> AI-powered</span>} />
     {error && <div className="meeting-message meeting-message--error" role="alert">{error}</div>}
     {notice && <div className="meeting-message" role="status">{notice}</div>}
-    <div className="meeting-privacy"><AudioLines size={20} /><div><strong>Your recordings are processed, not stored as media.</strong><p>Dayora saves the transcript and minutes in this workspace. The original recording is sent to the configured transcription provider and is not retained by Dayora. Get participant consent before recording.</p></div></div>
+    <div className="meeting-privacy"><AudioLines size={20} /><div><strong>Your recordings are processed, not stored as media.</strong><p>Dayora saves the transcript and minutes in this workspace. The original recording is sent to the configured transcription provider and is not retained by Dayora. Where supported, live transcript preview may use your browser’s speech-recognition service under that provider’s privacy terms. Get participant consent before recording.</p></div></div>
 
     <form className="panel meeting-create" onSubmit={createMeeting}>
       <div className="meeting-create-heading"><div><span className="meeting-eyebrow">NEW MEETING</span><h2>Start with the details</h2></div><span className="meeting-create-icon"><Plus size={20} /></span></div>
