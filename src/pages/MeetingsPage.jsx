@@ -100,6 +100,7 @@ export default function MeetingsPage({ projects = [], onCreateTask, onSaveWorkLo
     } catch (reason) {
       setError(reason.message || 'Recording could not be transcribed. Dayora does not retain the original audio; try again or upload it again.')
       await patchMeeting(session.meeting.id, { endedAt, timerElapsedMs: elapsedMs, timerState: 'stopped', status: 'failed' }).catch(() => {})
+      try { await onSaveWorkLog?.({ title: session.meeting.title, projectId: session.meeting.projectId, startedAt: session.startedAt, endedAt, segments, duration: elapsedMs }) } catch {}
     } finally {
       session.stream.getTracks().forEach((track) => track.stop())
       session.displayStream?.getTracks().forEach((track) => track.stop())
