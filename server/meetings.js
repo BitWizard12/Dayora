@@ -26,12 +26,12 @@ const minutesSchema = z.object({
 const createSchema = z.object({
   title: z.string().trim().min(1).max(200), type: z.enum(['in-person', 'online', 'uploaded']).default('in-person'),
   attendees: z.array(z.string().trim().min(1).max(200)).max(50).default([]), agenda: text.default(''), notes: text.default(''),
-  projectId: z.uuid().nullable().default(null),
+  meetingAt: z.number().finite().nonnegative().nullable().default(null), projectId: z.uuid().nullable().default(null),
 }).strict()
 const updateSchema = z.object({
   title: z.string().trim().min(1).max(200).optional(), type: z.enum(['in-person', 'online', 'uploaded']).optional(),
   attendees: z.array(z.string().trim().min(1).max(200)).max(50).optional(), agenda: text.optional(), notes: text.optional(),
-  projectId: z.uuid().nullable().optional(), minutes: minutesSchema.optional(),
+  projectId: z.uuid().nullable().optional(), meetingAt: z.number().finite().nonnegative().nullable().optional(), minutes: minutesSchema.optional(),
   status: z.enum(['scheduled', 'recording', 'processing', 'completed', 'failed']).optional(),
   startedAt: z.number().finite().nonnegative().nullable().optional(), endedAt: z.number().finite().nonnegative().nullable().optional(),
   timerElapsedMs: z.number().finite().nonnegative().max(604800000).optional(),
@@ -189,7 +189,7 @@ async function transcribe(buffer, details, env) {
 async function summarize(meeting, env) {
   const key = requireAiKey(env)
   if (!meeting.transcript?.trim()) throw new ApiError(400, 'TRANSCRIPT_REQUIRED', 'Transcribe or add a transcript before generating minutes.')
-  const source = { title: meeting.title, type: meeting.type, date: meeting.createdAt ? new Date(meeting.createdAt).toISOString() : '', attendees: meeting.attendees || [], agenda: meeting.agenda || '', notes: meeting.notes || '', transcript: meeting.transcript.slice(0, 70000) }
+  const source = { title: meeting.title, type: meeting.type, date: (meeting.meetingAt || meeting.createdAt) ? new Date(meeting.meetingAt || meeting.createdAt).toISOString() : '', attendees: meeting.attendees || [], agenda: meeting.agenda || '', notes: meeting.notes || '', transcript: meeting.transcript.slice(0, 70000) }
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST', headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
     body: JSON.stringify({
