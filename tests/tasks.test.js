@@ -27,6 +27,20 @@ test('task edits, subtasks, completion and reordering preserve scope and survive
   await repos.tasks.remove(task.id)
   assert.equal(repos.tasks.getSnapshot().data.length, 1)
 })
+test('meeting action task creation is idempotent across retries and persists its link key', async () => {
+  const store = adapter(), scope = { ownerId: 'test', workspaceId: 'meeting-actions' }
+  const repos = createWorkspaceRepositories(scope, store)
+  const input = { title: 'Send meeting notes', description: 'Share the reviewed minutes', status: 'To do', priority: 'High', dueDate: '2026-10-20', projectId: null }
+  const first = await repos.tasks.createMeetingActionTask(input, 'meeting-123', 'action-456')
+  const retry = await repos.tasks.createMeetingActionTask(input, 'meeting-123', 'action-456')
+  assert.equal(retry.id, first.id)
+  assert.equal(repos.tasks.getSnapshot().data.filter((task) => task.meetingActionKey === 'meeting-123:action-456').length, 1)
+  const restored = createWorkspaceRepositories(scope, store)
+  await restored.tasks.load()
+  const persisted = await restored.tasks.createMeetingActionTask(input, 'meeting-123', 'action-456')
+  assert.equal(persisted.id, first.id)
+  assert.equal(restored.tasks.getSnapshot().data.length, 1)
+})
 test('daily views, combined filters and search use actual dates and exclude completed work', () => {
   const records = [{ id: '1', title: 'Review', description: 'API', dueDate: '2026-10-06', status: 'To do', priority: 'Urgent', projectId: 'p', subtasks: [] },
     { id: '2', title: 'Old', dueDate: '2026-10-05', status: 'In progress', priority: 'Low' },
