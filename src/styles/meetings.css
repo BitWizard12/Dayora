@@ -31,3 +31,14 @@
 .meeting-spin { animation:meeting-spin 1s linear infinite; } @keyframes meeting-spin { to { transform:rotate(360deg); } }
 @media(max-width:700px) { .meeting-form-grid { grid-template-columns:1fr; }.meeting-wide { grid-column:auto; }.meeting-create,.meeting-card { padding:15px; }.meeting-consent { align-items:flex-start; }.meeting-action-item { align-items:flex-start; flex-direction:column; }.meeting-list-heading { align-items:flex-start; }.meeting-minutes { padding:12px; } }
 @media(prefers-reduced-motion:reduce) { .meeting-spin { animation:none; } }
+
+.meeting-list-tools { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+.meeting-list-tools input,.meeting-list-tools select { min-width:130px; max-width:220px; padding:8px 10px; border:1px solid #e4e9e1; border-radius:8px; color:#59645a; background:#fff; font:400 12px 'DM Sans',sans-serif; }
+.meeting-list-tools span { color:#818980; font-size:11px; white-space:nowrap; }
+@media print {
+  body * { visibility:hidden !important; }
+  .meeting-card--printing,.meeting-card--printing * { visibility:visible !important; }
+  .meeting-card--printing { position:absolute !important; inset:0 auto auto 0 !important; width:100% !important; border:0 !important; box-shadow:none !important; background:#fff !important; }
+  .meeting-card--printing .icon-btn,.meeting-card--printing .meeting-actions,.meeting-card--printing .meeting-recording-panel,.meeting-card--printing .meeting-transcript,.meeting-card--printing .meeting-processing,.meeting-card--printing .meeting-minutes-heading button,.meeting-card--printing .meeting-review-note { display:none !important; }
+}
+@media(max-width:700px) { .meeting-list-tools { width:100%; } .meeting-list-tools input,.meeting-list-tools select { flex:1; max-width:none; } }
