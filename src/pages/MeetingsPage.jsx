@@ -221,7 +221,7 @@ export default function MeetingsPage({ projects = [], onCreateTask, onSaveWorkLo
     if (!onCreateTask) return
     setBusy(meeting.id); setError('')
     try {
-      const task = await onCreateTask({ ...item, projectId: meeting.projectId || null })
+      const task = await onCreateTask({ ...item, projectId: meeting.projectId || null }, { meetingId: meeting.id, actionItemId: item.id })
       const current = meetings.find((record) => record.id === meeting.id)
       const minutes = { ...(current.minutes || emptyMinutes), actionItems: (current.minutes?.actionItems || []).map((action) => action.id === item.id ? { ...action, linkedTaskId: task.id } : action) }
       await patchMeeting(meeting.id, { minutes })
