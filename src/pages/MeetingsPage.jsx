@@ -102,6 +102,8 @@ export default function MeetingsPage({ projects = [], onCreateTask, onSaveWorkLo
       await patchMeeting(session.meeting.id, { endedAt, timerElapsedMs: elapsedMs, timerState: 'stopped', status: 'failed' }).catch(() => {})
     } finally {
       session.stream.getTracks().forEach((track) => track.stop())
+      session.displayStream?.getTracks().forEach((track) => track.stop())
+      session.microphoneStream?.getTracks().forEach((track) => track.stop())
       if (recognitionRef.current) { try { recognitionRef.current.stop() } catch {} recognitionRef.current = null }
       if (recorderRef.current === session) recorderRef.current = null
       setActiveId(''); setBusy(''); setElapsed(0)
@@ -113,20 +115,23 @@ export default function MeetingsPage({ projects = [], onCreateTask, onSaveWorkLo
     setError(''); setNotice('')
     if (!consent) { setError('Confirm that participants have been informed and appropriate consent has been obtained before recording.'); return }
     if (!navigator.mediaDevices) { setError('This browser does not support recording. Try a current desktop browser or upload a recording.'); return }
-    let stream, recorder
+    let stream, displayStream, microphoneStream, recorder
     try {
       if (meeting.type === 'online') {
         if (!navigator.mediaDevices.getDisplayMedia) throw new Error('Tab-audio capture is not supported in this browser. Upload the meeting recording instead.')
-        stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true })
-        if (!stream.getAudioTracks().length) throw new Error('No shared audio was detected. When sharing a browser tab, enable “Share tab audio”.')
+        displayStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true })
+        if (!displayStream.getAudioTracks().length) throw new Error('No shared audio was detected. When sharing a browser tab, enable “Share tab audio”.')
+        microphoneStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+        stream = new MediaStream([...displayStream.getAudioTracks(), ...microphoneStream.getAudioTracks()])
       } else stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       if (!window.MediaRecorder) throw new Error('MediaRecorder is not supported in this browser. Upload an existing recording instead.')
       recorder = new MediaRecorder(stream)
       const now = Date.now()
-      const session = { meeting, recorder, stream, chunks: [], startedAt: now, runningSince: now, elapsedMs: 0, segments: [] }
+      const session = { meeting, recorder, stream, displayStream, microphoneStream, chunks: [], startedAt: now, runningSince: now, elapsedMs: 0, segments: [] }
       recorder.ondataavailable = (event) => { if (event.data?.size) session.chunks.push(event.data) }
       recorder.onstop = () => { void finishRecording(session) }
       recorder.start(1000); recorderRef.current = session
+      displayStream?.getVideoTracks().forEach((track) => track.addEventListener('ended', () => { if (recorder.state !== 'inactive') recorder.stop() }, { once: true }))
       setActiveId(meeting.id); setElapsed(0); setLiveText('')
       await patchMeeting(meeting.id, { status: 'recording', startedAt: now, endedAt: null, timerElapsedMs: 0, timerState: 'running' })
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
@@ -142,10 +147,12 @@ export default function MeetingsPage({ projects = [], onCreateTask, onSaveWorkLo
           recognitionRef.current = recognition; recognition.start()
         } catch { setLiveText('Live preview is unavailable; the recording will be transcribed when stopped.') }
       } else setLiveText('Recording is active. The saved transcript is generated when you stop.')
-      setNotice(meeting.type === 'online' ? 'Recording shared tab audio. Keep the browser sharing indicator visible.' : 'Recording started. You can pause or stop at any time.')
+      setNotice(meeting.type === 'online' ? 'Recording shared tab audio and your microphone. Keep the browser sharing indicator visible.' : 'Recording started. You can pause or stop at any time.')
     } catch (reason) {
       if (recorder && recorder.state !== 'inactive') { try { recorder.stop() } catch {} }
       stream?.getTracks().forEach((track) => track.stop())
+      displayStream?.getTracks().forEach((track) => track.stop())
+      microphoneStream?.getTracks().forEach((track) => track.stop())
       if (recorderRef.current?.meeting.id === meeting.id) recorderRef.current = null
       setActiveId('')
       setError(reason.message || 'Could not start recording. Check browser permissions.')
