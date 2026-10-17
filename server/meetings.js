@@ -31,8 +31,8 @@ const createSchema = z.object({
 const updateSchema = z.object({
   title: z.string().trim().min(1).max(200).optional(), type: z.enum(['in-person', 'online', 'uploaded']).optional(),
   attendees: z.array(z.string().trim().min(1).max(200)).max(50).optional(), agenda: text.optional(), notes: text.optional(),
-  projectId: z.uuid().nullable().optional(), meetingAt: z.number().finite().nonnegative().nullable().optional(), minutes: minutesSchema.optional(),
-  status: z.enum(['scheduled', 'recording', 'processing', 'completed', 'failed']).optional(),
+  projectId: z.uuid().nullable().optional(), meetingAt: z.number().finite().nonnegative().nullable().optional(),
+  minutes: minutesSchema.optional(), status: z.enum(['scheduled', 'recording', 'processing', 'completed', 'failed']).optional(),
   startedAt: z.number().finite().nonnegative().nullable().optional(), endedAt: z.number().finite().nonnegative().nullable().optional(),
   timerElapsedMs: z.number().finite().nonnegative().max(604800000).optional(),
   timerState: z.enum(['idle', 'running', 'paused', 'stopped']).optional(),
@@ -50,7 +50,7 @@ function createUserClient(token) {
   if (!url || !key) throw new ApiError(503, 'SUPABASE_NOT_CONFIGURED', 'Meeting storage is not configured. Add SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY to the backend environment.')
   return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }, global: { headers: { Authorization: 'Bearer ' + token } } })
 }
-async function authenticateSupabase(req, res, next) {
+async function authenticateSupabase(req, _res, next) {
   try {
     const token = /^Bearer\s+(.+)$/i.exec(req.get('authorization') || '')?.[1]
     if (!token) throw new ApiError(401, 'AUTH_REQUIRED', 'Sign in to access your meetings.')
@@ -68,56 +68,52 @@ async function authenticateSupabase(req, res, next) {
   } catch (error) { next(error) }
 }
 async function readCollection(req, collection) {
-  const { data, error } = await req.meetingSupabase.from('dayora_collections').select('data,updated_at')
+  const { data, error } = await req.meetingSupabase.from('dayora_collections').select('data')
     .eq('user_id', req.meetingUser.id).eq('collection', collection).maybeSingle()
-  if (error) throw new ApiError(503, 'WORKSPACE_DATA_UNAVAILABLE', 'Dayora could not read this workspace data. Check the Supabase table and row-level security configuration.')
-  return { rows: Array.isArray(data?.data) ? data.data : [], updatedAt: data?.updated_at ?? null, exists: Boolean(data) }
-}
-async function writeCollection(req, collection, current, rows) {
-  const table = req.meetingSupabase.from('dayora_collections'), now = new Date().toISOString()
-  if (current.exists) {
-    let query = table.update({ data: rows, updated_at: now }).eq('user_id', req.meetingUser.id).eq('collection', collection)
-    query = current.updatedAt ? query.eq('updated_at', current.updatedAt) : query.is('updated_at', null)
-    const { data, error } = await query.select('user_id').maybeSingle()
-    if (error) throw new ApiError(503, 'WORKSPACE_DATA_UNAVAILABLE', 'Dayora could not save this workspace data.')
-    return Boolean(data)
-  }
-  const { data, error } = await table.insert({ user_id: req.meetingUser.id, collection, data: rows, updated_at: now }).select('user_id').maybeSingle()
-  if (error?.code === '23505') return false
-  if (error) throw new ApiError(503, 'WORKSPACE_DATA_UNAVAILABLE', 'Dayora could not save this workspace data.')
-  return Boolean(data)
-}
-async function mutateMeetings(req, mutate) {
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const current = await readCollection(req, 'meetings'), change = mutate(current.rows)
-    if (!change.write) return change.value
-    if (await writeCollection(req, 'meetings', current, change.rows)) return change.value
-    await new Promise((resolve) => setTimeout(resolve, 15 * (attempt + 1)))
-  }
-  throw new ApiError(409, 'MEETINGS_CONFLICT', 'Another meeting update happened at the same time. Refresh the list and try again.')
-}
-function findMeeting(rows, id, userId) {
-  const meeting = rows.find((row) => row.id === id && (!row.ownerId || row.ownerId === userId) && (!row.workspaceId || row.workspaceId === userId))
-  if (!meeting) throw notFound()
-  return meeting
-}
-async function readMeeting(req, id) {
-  const collection = await readCollection(req, 'meetings')
-  return findMeeting(collection.rows, id, req.meetingUser.id)
-}
-async function updateMeeting(req, id, patch) {
-  return mutateMeetings(req, (rows) => {
-    const index = rows.findIndex((row) => row.id === id && (!row.ownerId || row.ownerId === req.meetingUser.id) && (!row.workspaceId || row.workspaceId === req.meetingUser.id))
-    if (index < 0) throw notFound()
-    const updated = { ...rows[index], ...patch, updatedAt: Date.now() }
-    const next = rows.slice(); next[index] = updated
-    return { write: true, rows: next, value: updated }
-  })
+  if (error) throw new ApiError(503, 'WORKSPACE_DATA_UNAVAILABLE', 'Dayora could not read workspace references. Check Supabase access and row-level security.')
+  return Array.isArray(data?.data) ? data.data : []
 }
 async function ensureReference(req, collection, id, message) {
   if (!id) return
-  const result = await readCollection(req, collection)
-  if (!result.rows.some((row) => row.id === id)) throw new ApiError(400, 'INVALID_LINK', message)
+  const rows = await readCollection(req, collection)
+  if (!rows.some((row) => row.id === id)) throw new ApiError(400, 'INVALID_LINK', message)
+}
+function fromRow(row) {
+  return {
+    id: row.id, title: row.title, type: row.type, attendees: row.attendees || [], agenda: row.agenda || '', notes: row.notes || '',
+    projectId: row.project_id || null, meetingAt: row.meeting_at == null ? null : Number(row.meeting_at),
+    transcript: row.transcript || '', transcriptSegments: row.transcript_segments || [], transcriptLanguage: row.transcript_language || '',
+    minutes: row.minutes || null, status: row.status, startedAt: row.started_at == null ? null : Number(row.started_at),
+    endedAt: row.ended_at == null ? null : Number(row.ended_at), timerElapsedMs: Number(row.timer_elapsed_ms || 0),
+    timerState: row.timer_state, processingError: row.processing_error || '', ownerId: row.user_id, workspaceId: row.workspace_id,
+    createdAt: Number(row.created_at), updatedAt: Number(row.updated_at),
+  }
+}
+function toPatch(patch) {
+  const map = {
+    title: 'title', type: 'type', attendees: 'attendees', agenda: 'agenda', notes: 'notes', projectId: 'project_id',
+    meetingAt: 'meeting_at', minutes: 'minutes', status: 'status', startedAt: 'started_at', endedAt: 'ended_at',
+    timerElapsedMs: 'timer_elapsed_ms', timerState: 'timer_state', transcript: 'transcript',
+    transcriptSegments: 'transcript_segments', transcriptLanguage: 'transcript_language', processingError: 'processing_error',
+  }
+  const output = {}
+  for (const [key, value] of Object.entries(patch)) if (map[key]) output[map[key]] = value
+  output.updated_at = Date.now()
+  return output
+}
+async function readMeeting(req, id) {
+  const { data, error } = await req.meetingSupabase.from('dayora_meetings').select('*')
+    .eq('id', id).eq('user_id', req.meetingUser.id).eq('workspace_id', req.meetingUser.id).maybeSingle()
+  if (error) throw new ApiError(503, 'MEETING_READ_FAILED', 'Dayora could not read this meeting.')
+  if (!data) throw notFound()
+  return fromRow(data)
+}
+async function updateMeeting(req, id, patch) {
+  const { data, error } = await req.meetingSupabase.from('dayora_meetings').update(toPatch(patch))
+    .eq('id', id).eq('user_id', req.meetingUser.id).eq('workspace_id', req.meetingUser.id).select('*').maybeSingle()
+  if (error) throw new ApiError(503, 'MEETING_SAVE_FAILED', 'Dayora could not save this meeting.')
+  if (!data) throw notFound()
+  return fromRow(data)
 }
 function normalizeMinutes(raw) {
   const schema = z.object({
@@ -212,35 +208,42 @@ export function createMeetingRoutes(config) {
   const aiLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 12, store: rateLimitStore(config, 'meeting-ai'), standardHeaders: 'draft-8', legacyHeaders: false })
   router.use('/meetings', authenticateSupabase)
   router.get('/meetings', async (req, res) => {
-    const { rows } = await readCollection(req, 'meetings')
-    res.json({ meetings: rows.filter((row) => !row.ownerId || row.ownerId === req.meetingUser.id) })
+    const { data, error } = await req.meetingSupabase.from('dayora_meetings').select('*')
+      .eq('user_id', req.meetingUser.id).eq('workspace_id', req.meetingUser.id).order('updated_at', { ascending: false }).limit(500)
+    if (error) throw new ApiError(503, 'MEETINGS_UNAVAILABLE', 'Dayora could not load meetings. Check Supabase table access.')
+    res.json({ meetings: (data || []).map(fromRow) })
   })
   router.post('/meetings', async (req, res) => {
     const input = createSchema.parse(req.body)
     await ensureReference(req, 'projects', input.projectId, 'Choose a project in this workspace.')
-    const now = Date.now(), id = randomUUID()
-    const meeting = { id, ...input, notes: input.notes || '', transcript: '', transcriptSegments: [], transcriptLanguage: '', minutes: null,
-      status: 'scheduled', startedAt: null, endedAt: null, timerElapsedMs: 0, timerState: 'idle',
-      ownerId: req.meetingUser.id, workspaceId: req.meetingUser.id, createdAt: now, updatedAt: now }
-    const saved = await mutateMeetings(req, (rows) => ({ write: true, rows: [meeting, ...rows.filter((row) => row.id !== id)], value: meeting }))
-    res.status(201).json({ meeting: saved })
+    const now = Date.now()
+    const row = {
+      id: randomUUID(), user_id: req.meetingUser.id, workspace_id: req.meetingUser.id, title: input.title, type: input.type,
+      attendees: input.attendees, agenda: input.agenda, notes: input.notes, project_id: input.projectId,
+      meeting_at: input.meetingAt ?? now, transcript: '', transcript_segments: [], transcript_language: '', minutes: null,
+      status: 'scheduled', started_at: null, ended_at: null, timer_elapsed_ms: 0, timer_state: 'idle',
+      processing_error: '', created_at: now, updated_at: now,
+    }
+    const { data, error } = await req.meetingSupabase.from('dayora_meetings').insert(row).select('*').single()
+    if (error) throw new ApiError(503, 'MEETING_CREATE_FAILED', 'Dayora could not create this meeting. Check Supabase table access.')
+    res.status(201).json({ meeting: fromRow(data) })
   })
   router.patch('/meetings/:id', async (req, res) => {
     const id = z.uuid().parse(req.params.id), patch = updateSchema.parse(req.body)
     await ensureReference(req, 'projects', patch.projectId, 'Choose a project in this workspace.')
     if (patch.minutes) {
       const tasks = await readCollection(req, 'tasks')
-      for (const item of patch.minutes.actionItems) if (item.linkedTaskId && !tasks.rows.some((task) => task.id === item.linkedTaskId)) throw new ApiError(400, 'INVALID_LINK', 'Choose a task in this workspace.')
+      for (const item of patch.minutes.actionItems) if (item.linkedTaskId && !tasks.some((task) => task.id === item.linkedTaskId)) throw new ApiError(400, 'INVALID_LINK', 'Choose a task in this workspace.')
     }
     res.json({ meeting: await updateMeeting(req, id, patch) })
   })
   router.delete('/meetings/:id', async (req, res) => {
     const id = z.uuid().parse(req.params.id)
-    const deleted = await mutateMeetings(req, (rows) => {
-      const record = findMeeting(rows, id, req.meetingUser.id)
-      return { write: true, rows: rows.filter((row) => row.id !== id), value: record }
-    })
-    res.json({ deleted: true, id: deleted.id })
+    const { data, error } = await req.meetingSupabase.from('dayora_meetings').delete()
+      .eq('id', id).eq('user_id', req.meetingUser.id).eq('workspace_id', req.meetingUser.id).select('id').maybeSingle()
+    if (error) throw new ApiError(503, 'MEETING_DELETE_FAILED', 'Dayora could not delete this meeting.')
+    if (!data) throw notFound()
+    res.json({ deleted: true, id: data.id })
   })
   router.post('/meetings/:id/transcribe-upload', aiLimiter, express.raw({ type: ['audio/*', 'video/*', 'application/octet-stream'], limit: '25mb' }), async (req, res) => {
     const id = z.uuid().parse(req.params.id), buffer = req.body
