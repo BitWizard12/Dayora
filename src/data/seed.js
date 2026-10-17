@@ -1,4 +1,4 @@
-import { Activity, CalendarDays, CircleHelp, LayoutDashboard, ListTodo, Settings as SettingsIcon, FolderKanban, NotebookPen } from 'lucide-react'
+import { Activity, CalendarDays, CircleHelp, LayoutDashboard, ListTodo, Settings as SettingsIcon, FolderKanban, NotebookPen, Mic } from 'lucide-react'
 
 export const initialTasks = []
 export const initialProjects = []
@@ -10,6 +10,7 @@ export const pages = [
   { id: 'projects', label: 'Projects', icon: FolderKanban },
   { id: 'calendar', label: 'Calendar', icon: CalendarDays },
   { id: 'work-log', label: 'Work Log', icon: NotebookPen },
+  { id: 'meetings', label: 'Meetings', icon: Mic },
   { id: 'analytics', label: 'Analytics', icon: Activity },
   { id: 'settings', label: 'Settings', icon: SettingsIcon },
   { id: 'help', label: 'Help', icon: CircleHelp },

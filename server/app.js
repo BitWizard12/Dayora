@@ -21,7 +21,7 @@ export function createApp({ config, routes = [], readiness = createReadinessProb
   })
   app.use(helmet())
   app.use('/api', rateLimit({ windowMs: 60000, limit: 300, store: rateLimitStore(config, 'api'), standardHeaders: 'draft-8', legacyHeaders: false, skip: (req) => req.path.startsWith('/health/'), message: { error: { code: 'RATE_LIMITED', message: 'Too many requests. Please try again shortly.' } } }))
-  app.use(cors({ origin: config.APP_ORIGIN, credentials: true, methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'], allowedHeaders: ['Content-Type', 'X-CSRF-Token', 'X-Workspace-Id'] }))
+  app.use(cors({ origin: config.APP_ORIGIN, credentials: true, methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'], allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token', 'X-Workspace-Id', 'X-Upload-Filename'] }))
   app.use(express.json({ limit: '12mb' }))
   app.use(cookieParser())
   app.get('/api/health/live', (_req, res) => res.json({ status: 'ok', service: 'Dayora' }))
@@ -30,7 +30,11 @@ export function createApp({ config, routes = [], readiness = createReadinessProb
     res.set('Cache-Control', 'no-store')
     if (config.NODE_ENV === 'production' && !req.secure) return next(new ApiError(400, 'HTTPS_REQUIRED', 'HTTPS is required.'))
     if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) && req.get('origin') !== config.APP_ORIGIN) return next(new ApiError(403, 'ORIGIN_REJECTED', 'Request origin is not allowed.'))
-    if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) && !req.is('application/json')) return next(new ApiError(415, 'JSON_REQUIRED', 'Use application/json for API mutations.'))
+    if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+      const uploadPath = /^\/(?:api\/)?meetings\/[^/]+\/transcribe-upload$/.test(req.path)
+      const uploadType = /^(audio|video)\//.test(req.get('content-type') || '') || (req.get('content-type') || '').startsWith('application/octet-stream')
+      if (!req.is('application/json') && !(uploadPath && uploadType)) return next(new ApiError(415, 'JSON_REQUIRED', 'Use JSON for API mutations, or an audio/video body for meeting uploads.'))
+    }
     next()
   })
   routes.forEach((route) => app.use('/api', route))

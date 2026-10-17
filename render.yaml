@@ -20,6 +20,10 @@ services:
         value: smtp
       - key: RATE_LIMIT_STORE
         value: firestore
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_PUBLISHABLE_KEY
+        sync: false
       - key: FIREBASE_PROJECT_ID
         sync: false
       - key: FIREBASE_WEB_API_KEY
@@ -32,3 +36,9 @@ services:
         sync: false
       - key: MAIL_FROM
         sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_TRANSCRIPTION_MODEL
+        value: whisper-1
+      - key: OPENAI_MEETING_MODEL
+        value: gpt-4o-mini

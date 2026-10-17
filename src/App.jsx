@@ -26,6 +26,7 @@ const SettingsPage = lazy(() => import('./pages/SettingsPage'))
 const HelpPage = lazy(() => import('./pages/HelpPage'))
 const AdminPage = lazy(() => import('./pages/AdminPage'))
 const WorkLogPage = lazy(() => import('./pages/WorkLogPage'))
+const MeetingsPage = lazy(() => import('./pages/MeetingsPage'))
 const ProjectsPage = lazy(() => import('./pages/ProjectsPage'))
 
 function App() {
@@ -92,6 +93,8 @@ function App() {
       if (item.projectId && projects.some((p) => p.id === item.projectId)) openProject(item.projectId)
     } catch {}
   }
+  const createMeetingTask = useCallback((item) => workspaceRepositories.tasks.createTask({ title: item.title, description: item.description || '', status: 'To do', priority: item.priority || 'Medium', dueDate: item.dueDate || null, projectId: item.projectId || null }), [])
+  const saveMeetingWorkLog = useCallback((entry) => workspaceRepositories.timeEntries.create({ projectId: entry.projectId || null, taskId: null, title: 'Meeting: ' + entry.title, note: 'Meeting recording and transcription session.', label: 'Meeting', startedAt: entry.startedAt, endedAt: entry.endedAt, runningSince: null, segments: entry.segments, duration: entry.duration }), [])
   const pageTitle = page === 'admin' ? 'Administration' : pages.find((item) => item.id === page)?.label || 'Dashboard'
   const clearNotifications = () => { workspaceRepositories.notifications.markAllRead().catch(() => {}) }
 
@@ -124,6 +127,7 @@ function App() {
         {page === 'tasks' && <TaskBoard tasks={tasks} projects={projects} team={[]} onOpen={openTask} onCreate={(status) => setTaskDialog({ status })} />}
         {page === 'projects' && <ProjectsPage projects={projects} tasks={tasks} onProject={openProject} onCreate={() => openModal('project')} />}
         {page === 'work-log' && <WorkLogPage entries={timeState.data} projects={projects} tasks={tasks} />}
+        {page === 'meetings' && <MeetingsPage projects={projects} onCreateTask={createMeetingTask} onSaveWorkLog={saveMeetingWorkLog} />}
         {page === 'calendar' && <CalendarPage events={eventState.data} tasks={tasks} projects={projects} onCreate={(date, timeZone) => setEventDialog({ date, timeZone })} onEntry={openEntry} />}
         {page === 'analytics' && <AnalyticsPage tasks={tasks} projects={projects} team={[]} timeEntries={timeState.data} onProject={openProject} onTask={openTask} />}
         {page === 'settings' && <SettingsPage />}
