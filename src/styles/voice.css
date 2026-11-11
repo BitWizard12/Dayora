@@ -40,6 +40,9 @@
 .voice-options > p { font-size: 12px; line-height: 1.8; color: var(--muted); }
 .voice-options label { margin-block: 16px; }
 .voice-options textarea { font-size: 13px; padding: 12px; }
+.voice-ai { padding: 14px 16px; border: 1px solid #d5cfe6; border-radius: 16px; background: linear-gradient(120deg, #ede7f547, #e6edf34a); }
+.voice-optional { margin-left: 4px; color: #646779; font-size: 11px; font-weight: 400; }
+.voice-ai select { min-width: 0; width: 100%; padding: 12px; border: 1px solid #c8cadc; border-radius: 12px; background: #ffffff80; color: #414b65; }
 .voice-meetings { display: flex; align-items: center; justify-content: center; gap: 7px; width: 100%; text-align: left; font-size: 12px; line-height: 1.6; color: #536b7f; margin-top: 16px; min-height: 44px; }
 .voice-error { color: #8f2f43; background: #f7e9ed; border: 1px solid #e2bac6; padding: 13px; border-radius: 12px; font-size: 13px; overflow-wrap: anywhere; }
 @keyframes voice-breathe { 50% { opacity: .4; } }

@@ -75,3 +75,7 @@ This is local formatting, not AI rewriting. It preserves words, punctuation, par
 Validation: five voice unit tests and 16 voice/shell browser regressions passed. Coverage includes preview/apply/cancel/undo and 1440/1024/768/390px layouts. Lint retains the same three existing warnings. The default local build still fails existing API-origin validation; a process-only empty VITE_API_URL builds successfully without editing .env. Browser speech and workspace data are simulated in these regressions.
 
 Optional AI rewriting is still pending. It needs a separate authenticated, rate-limited server endpoint, provider configuration, clear disclosure before sending draft text, cancellation/error handling, and original-versus-suggestion review. Do not send provider keys from the browser or repurpose meeting-summary routes. No authentication, backend, database, repository, or deployment changes were made in this increment.
+
+## Following increment: optional AI rewriting
+
+Implemented locally after the spacing increment; deployment and real-provider validation remain pending. See [DAYORA-VOICE-AI.md](DAYORA-VOICE-AI.md) for current behavior, verification and release requirements. The original MVP exclusions above describe the first release.

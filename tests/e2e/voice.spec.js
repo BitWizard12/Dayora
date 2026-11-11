@@ -3,6 +3,8 @@ const preview = '/tests/helpers/design-preview.html'
 
 test.beforeEach(async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' })
+  // Isolated auth boundary: never send a real account token to a test endpoint.
+  await page.route('**/src/services/supabase.js*', route => route.fulfill({ contentType: 'application/javascript', body: 'export const supabase = { auth: { getSession: async () => ({data:{session:{access_token:"voice-test-token"}}}) } }' }))
   await page.addInitScript(() => {
     window.__starts = 0; window.__aborts = 0
     window.SpeechRecognition = class {
@@ -56,14 +58,14 @@ test('voice note additions preserve unsaved existing text and insertion honors t
 test('personalization persists when reopened and text rules are opt-in', async ({ page }) => {
   await page.getByRole('button', { name: 'Open voice studio' }).click()
   const dialog = page.getByRole('dialog')
-  await dialog.locator('summary').click()
+  await dialog.locator('.voice-options:not(.voice-ai) > summary').click()
   await dialog.getByLabel('Spoken shortcuts').fill('my signature = Regards, Alex')
   await dialog.getByLabel('Vocabulary replacements').fill('day aura = Dayora')
   await dialog.getByRole('button', { name: 'Save preferences' }).click()
   await expect(dialog.getByRole('status')).toHaveText('Voice preferences saved.')
   await page.keyboard.press('Escape')
   await page.getByRole('button', { name: 'Open voice studio' }).click()
-  await dialog.locator('summary').click()
+  await dialog.locator('.voice-options:not(.voice-ai) > summary').click()
   await expect(dialog.getByLabel('Spoken shortcuts')).toHaveValue('my signature = Regards, Alex')
   await dialog.getByLabel('Voice draft').fill('day aura')
   await dialog.getByRole('button', { name: 'Apply text rules' }).click()
@@ -112,7 +114,7 @@ test('drafts survive closure and task-review cancellation; clear and text rules 
   await expect(dialog.getByLabel('Voice draft')).toHaveValue('')
   await dialog.getByRole('button', { name: 'Undo', exact: true }).click()
   await expect(dialog.getByLabel('Voice draft')).toHaveValue('Keep this thought')
-  await dialog.locator('summary').click()
+  await dialog.locator('.voice-options:not(.voice-ai) > summary').click()
   await dialog.getByLabel('Vocabulary replacements').fill('thought = idea')
   await dialog.getByRole('button', { name: 'Apply text rules' }).click()
   await expect(dialog.getByLabel('Voice draft')).toHaveValue('Keep this idea')
@@ -164,4 +166,79 @@ test('spacing preview requires approval, keeps the original, and supports undo',
   await page.keyboard.press('Escape')
   await page.getByRole('button', { name: 'Open voice studio' }).click()
   await expect(dialog.getByLabel('Voice draft')).toHaveValue('Call   Sam\n\nReview  the plan')
+})
+
+test('AI rewriting is explicit, reviewed before use, and reversible', async ({ page }) => {
+  let requests = 0
+  await page.route('**/api/voice/rewrite', async route => {
+    requests++
+    expect(route.request().headers().authorization).toBe('Bearer voice-test-token')
+    expect(route.request().postDataJSON()).toEqual({ text: 'please call sam at 10', style: 'professional', consent: true })
+    await route.fulfill({ json: { text: 'Please call Sam at 10.' } })
+  })
+  await page.getByRole('button', { name: 'Open voice studio' }).click()
+  const dialog = page.getByRole('dialog'), draft = dialog.getByLabel('Voice draft')
+  await draft.fill('please call sam at 10')
+  await dialog.getByText('Rewrite with AI', { exact: false }).click()
+  expect(requests).toBe(0)
+  await expect(dialog).toContainText('sends this draft to OpenAI')
+  await dialog.getByLabel('Writing style').selectOption('professional')
+  await dialog.getByRole('button', { name: 'Generate suggestion' }).click()
+  await expect(dialog.getByLabel('AI suggestion', { exact: true })).toHaveValue('Please call Sam at 10.')
+  await expect(draft).toHaveValue('please call sam at 10')
+  await expect(dialog.getByRole('button', { name: 'Draft a task' })).toBeDisabled()
+  await dialog.getByRole('button', { name: 'Keep original' }).click()
+  await expect(draft).toHaveValue('please call sam at 10')
+  await dialog.getByRole('button', { name: 'Generate suggestion' }).click()
+  await dialog.getByRole('button', { name: 'Use suggestion' }).click()
+  await expect(draft).toHaveValue('Please call Sam at 10.')
+  await dialog.getByRole('button', { name: 'Undo', exact: true }).click()
+  await expect(draft).toHaveValue('please call sam at 10')
+  expect(requests).toBe(2)
+})
+
+test('AI errors and cancellation keep drafts and ignore a late response after closing', async ({ page }) => {
+  await page.route('**/api/voice/rewrite', route => route.fulfill({ status: 503, json: { error: { code: 'VOICE_AI_NOT_CONFIGURED' } } }))
+  await page.getByRole('button', { name: 'Open voice studio' }).click()
+  const dialog = page.getByRole('dialog'), draft = dialog.getByLabel('Voice draft')
+  await draft.fill('Keep this thought')
+  await dialog.locator('.voice-ai > summary').click()
+  await dialog.getByRole('button', { name: 'Generate suggestion' }).click()
+  await expect(dialog.getByRole('alert')).toContainText('isn’t enabled')
+  await expect(draft).toHaveValue('Keep this thought')
+  await page.unroute('**/api/voice/rewrite')
+  let release
+  const pending = new Promise(resolve => { release = resolve })
+  await page.route('**/api/voice/rewrite', async route => { await pending; await route.fulfill({ json: { text: 'Late suggestion' } }).catch(() => {}) })
+  await dialog.getByRole('button', { name: 'Generate suggestion' }).click()
+  await dialog.getByRole('button', { name: 'Cancel rewrite' }).click()
+  await expect(draft).toBeEnabled()
+  await expect(draft).toHaveValue('Keep this thought')
+  await dialog.getByRole('button', { name: 'Generate suggestion' }).click()
+  await expect(dialog.getByRole('button', { name: 'Cancel rewrite' })).toBeVisible()
+  await page.keyboard.press('Escape')
+  release()
+  await page.getByRole('button', { name: 'Open voice studio' }).click()
+  await expect(dialog.getByLabel('Voice draft')).toHaveValue('Keep this thought')
+  await expect(dialog.getByLabel('AI suggestion', { exact: true })).toHaveCount(0)
+})
+
+test('AI controls and suggestion review remain usable across screen sizes', async ({ page }) => {
+  await page.route('**/api/voice/rewrite', route => route.fulfill({ json: { text: 'A clearer thought.' } }))
+  for (const width of [1440, 1024, 768, 390]) {
+    await page.setViewportSize({ width, height: 900 })
+    await page.getByRole('button', { name: 'Open voice studio' }).click()
+    const dialog = page.getByRole('dialog')
+    await dialog.getByLabel('Voice draft').fill('a clearer thought')
+    await dialog.locator('.voice-ai > summary').click()
+    await dialog.getByRole('button', { name: 'Generate suggestion' }).click()
+    await expect(dialog.getByLabel('AI suggestion', { exact: true })).toHaveValue('A clearer thought.')
+    await dialog.getByRole('button', { name: 'Use suggestion' }).scrollIntoViewIfNeeded()
+    expect(await dialog.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    await page.screenshot({ path: `artifacts/dayora-voice-ai-${width}.png` })
+    await dialog.getByRole('button', { name: 'Use suggestion' }).click()
+    await expect(dialog.getByLabel('Voice draft')).toHaveValue('A clearer thought.')
+    await page.keyboard.press('Escape')
+  }
 })
