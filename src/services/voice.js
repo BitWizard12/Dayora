@@ -3,6 +3,24 @@ import { logDate } from './workLog.js'
 export const voiceDefaults = { language: 'en-IN', snippets: '', vocabulary: '' }
 export const voiceLanguages = [['en-IN', 'English (India)'], ['en-US', 'English (US)'], ['en-GB', 'English (UK)'], ['hi-IN', 'Hindi'], ['mr-IN', 'Marathi'], ['ml-IN', 'Malayalam'], ['es-ES', 'Spanish'], ['fr-FR', 'French']]
 
+// Local formatting only: preserve words, punctuation, indentation and fenced code.
+export function tidyVoiceSpacing(value) {
+  let fence = null
+  return String(value).replace(/\r\n?/g, '\n').split('\n').map(line => {
+    const marker = line.match(/^ {0,3}(`{3,}|~{3,})/)
+    if (fence) {
+      if (marker && marker[1][0] === fence[0] && marker[1].length >= fence.length && line.trim() === marker[1]) fence = null
+      return line
+    }
+    if (marker) { fence = marker[1]; return line }
+    if (/^(?: {4}|\t)/.test(line)) return line
+    const indent = line.match(/^ */)[0]
+    const hardBreak = / {2,}$/.test(line) ? '  ' : ''
+    const content = line.trim().replace(/[ \t]{2,}/g, ' ')
+    return content ? indent + content + hardBreak : ''
+  }).join('\n').replace(/^\n+|\n+$/g, '')
+}
+
 function rules(value) {
   return String(value || '').split('\n').map(line => {
     const index = line.indexOf('=')

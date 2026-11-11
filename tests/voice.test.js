@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { prepareVoiceText, voiceTaskDraft, createSpeechSession, createVoiceWorkspace } from '../src/services/voice.js'
+import { prepareVoiceText, tidyVoiceSpacing, voiceTaskDraft, createSpeechSession, createVoiceWorkspace } from '../src/services/voice.js'
 import { createWorkspaceRepositories } from '../src/repositories/workspaceRepositories.js'
 import { logDate } from '../src/services/workLog.js'
 
@@ -18,6 +18,17 @@ test('long voice drafts retain their full content for task review', () => {
   assert.equal(voiceTaskDraft(text).description, text)
   assert.deepEqual(voiceTaskDraft('Call Sam'), { title: 'Call Sam', description: '' })
   assert.throws(() => voiceTaskDraft(' '), /some text/)
+})
+
+test('spacing cleanup preserves language, punctuation, paragraph breaks and code', () => {
+  const source = '\nCall   राम at  10:30.\r\n\r\nUse https://example.com/a?q=one+two.\r\n'
+  const expected = 'Call राम at 10:30.\n\nUse https://example.com/a?q=one+two.'
+  assert.equal(tidyVoiceSpacing(source), expected)
+  assert.equal(tidyVoiceSpacing(expected), expected)
+  const code = '  - Keep   this  \n    const x = "two  spaces";\n```js\nconst y = "keep  these";  \n```\nAfter   code'
+  assert.equal(tidyVoiceSpacing(code), '  - Keep this  \n    const x = "two  spaces";\n```js\nconst y = "keep  these";  \n```\nAfter code')
+  assert.equal(tidyVoiceSpacing('~~~text\nkeep  spaces\n~~~\nNext   line'), '~~~text\nkeep  spaces\n~~~\nNext line')
+  assert.equal(tidyVoiceSpacing('Already tidy.\n\nAnother paragraph.'), 'Already tidy.\n\nAnother paragraph.')
 })
 
 test('speech sessions collect final results once, stop, report denial, and ignore late callbacks after disposal', () => {

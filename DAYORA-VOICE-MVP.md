@@ -65,3 +65,13 @@ Moved the draft into App session state instead of destroying it on VoicePanel un
 Automated checks use a simulated recognizer and memory-only workspace. They do not establish live microphone accuracy or authenticated remote persistence. Before calling this MVP release-ready, verify the real signed-in experience with microphone allow/deny, speech in the user's chosen languages, actual note/task persistence and reload/sign-out isolation. Resolve the existing production API-origin configuration separately; do not weaken its validation.
 
 Keep all work local until release is explicitly authorized.
+
+## Next increment: transcript review (November 11, 2026)
+
+Added an opt-in **Tidy spacing** action in the existing voice editor. It prepares a read-only preview and leaves the original draft unchanged until **Apply spacing**. **Keep original**, closing the panel during preview, and **Undo** after applying preserve the original text. Destination actions and dictation are disabled while reviewing a preview.
+
+This is local formatting, not AI rewriting. It preserves words, punctuation, paragraph breaks, list indentation, Markdown hard breaks, and fenced/indented code. No text leaves the browser for this operation. The review area uses the existing lavender/blue glass palette, blur and layered shadows; no new navigation or dashboard widget was added.
+
+Validation: five voice unit tests and 16 voice/shell browser regressions passed. Coverage includes preview/apply/cancel/undo and 1440/1024/768/390px layouts. Lint retains the same three existing warnings. The default local build still fails existing API-origin validation; a process-only empty VITE_API_URL builds successfully without editing .env. Browser speech and workspace data are simulated in these regressions.
+
+Optional AI rewriting is still pending. It needs a separate authenticated, rate-limited server endpoint, provider configuration, clear disclosure before sending draft text, cancellation/error handling, and original-versus-suggestion review. Do not send provider keys from the browser or repurpose meeting-summary routes. No authentication, backend, database, repository, or deployment changes were made in this increment.
