@@ -12,11 +12,10 @@ import ProjectDialog from './components/ProjectDialog'
 import TaskDialog from './components/TaskDialog'
 import EventDialog from './components/EventDialog'
 import { pageEntrance } from './styles/motion'
-import './App.css'
-import './styles/phase4.css'
 import useAuth from './hooks/useAuth'
 import AnonymousMigration from './components/AnonymousMigration'
 import useWorkspace from './hooks/useWorkspace'
+import { captureVoiceTarget } from './services/voice'
 
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const TaskBoard = lazy(() => import('./pages/TaskBoard'))
@@ -28,6 +27,7 @@ const AdminPage = lazy(() => import('./pages/AdminPage'))
 const WorkLogPage = lazy(() => import('./pages/WorkLogPage'))
 const MeetingsPage = lazy(() => import('./pages/MeetingsPage'))
 const ProjectsPage = lazy(() => import('./pages/ProjectsPage'))
+const VoicePanel = lazy(() => import('./components/VoicePanel'))
 
 function App() {
   const { user } = useAuth()
@@ -49,7 +49,16 @@ function App() {
   const [projectDialog, setProjectDialog] = useState(null)
   const [taskDialog, setTaskDialog] = useState(null)
   const [eventDialog, setEventDialog] = useState(null)
+  const [voiceOpen, setVoiceOpen] = useState(false)
+  // Session-only text: survives panel closure, never writes a recording/history.
+  const [voiceDraft, setVoiceDraft] = useState('')
+  const [voiceTarget, setVoiceTarget] = useState(null)
+  const rememberVoiceTarget = () => { setVoiceTarget(captureVoiceTarget(document.activeElement)) }
+  const openVoice = () => { setVoiceOpen(true); setPanel(''); setSearchOpen(false) }
   const dataError = [taskState, projectState, eventState, timeState, notificationState].find((state) => state.error)?.error
+
+  // Route entrances animate inside the scroll pane; the shell stays stationary.
+  useEffect(() => { document.getElementById('main')?.scrollTo({ top: 0, behavior: 'instant' }) }, [page])
 
   useEffect(() => {
     const sync = () => { const next = window.location.hash.slice(1); setPage(next === 'admin' && user?.role === 'admin' || pages.some((item) => item.id === next) ? next : 'dashboard') }
@@ -59,6 +68,16 @@ function App() {
 
   useEffect(() => {
     const onKey = (event) => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); setSearchOpen(true); document.querySelector('.topbar-search input')?.focus() } }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  useEffect(() => {
+    const onKey = (event) => {
+      if (event.altKey && event.shiftKey && event.code === 'KeyV' && !document.querySelector('[role="dialog"]')) {
+        event.preventDefault(); setVoiceTarget(captureVoiceTarget(document.activeElement)); setVoiceOpen(true); setPanel(''); setSearchOpen(false)
+      }
+    }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
@@ -118,7 +137,7 @@ function App() {
     <a className="skip-link" href="#main">Skip to content</a>
     <AnimatePresence>{sidebarOpen && <motion.button className="mobile-scrim" aria-label="Close menu" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSidebarOpen(false)} />}</AnimatePresence>
     <Sidebar sidebarOpen={sidebarOpen} page={page} go={go} tasks={tasks} onClose={closeSidebar} />
-    <div className="app-main" inert={sidebarOpen || undefined}><Header sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} page={page} pageTitle={pageTitle} search={search} setSearch={setSearch} searchOpen={searchOpen} setSearchOpen={setSearchOpen} searchResults={searchResults} go={go} panel={panel} setPanel={setPanel} notifications={notifications} clearNotifications={clearNotifications} onProject={openProject} onTask={openTask} onNotification={selectNotification} />
+    <div className="app-main" inert={sidebarOpen || undefined}><Header onVoice={openVoice} onVoicePointerDown={rememberVoiceTarget} sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} page={page} pageTitle={pageTitle} search={search} setSearch={setSearch} searchOpen={searchOpen} setSearchOpen={setSearchOpen} searchResults={searchResults} go={go} panel={panel} setPanel={setPanel} notifications={notifications} clearNotifications={clearNotifications} onProject={openProject} onTask={openTask} onNotification={selectNotification} />
     {dataError && <p className="page-content" role="alert">Unable to save or load workspace data: {dataError.message}</p>}
     <main id="main" onClick={() => { if (searchOpen && !search) setSearchOpen(false) }}>
       {user && workspace.type === 'individual' && <AnonymousMigration />}
@@ -137,9 +156,10 @@ function App() {
     </main>
     <footer className="app-footer"><span>Your Day, Your Way.</span><span>© 2026 Dayora</span></footer>
     </div>
+    <Suspense fallback={null}>{voiceOpen && <VoicePanel draft={voiceDraft} onDraftChange={setVoiceDraft} target={voiceTarget} onClose={() => setVoiceOpen(false)} onTaskDraft={(draft) => { setVoiceOpen(false); setTaskDialog({ status: 'To do', draft }) }} onMeetings={() => { setVoiceOpen(false); go('meetings') }} />}</Suspense>
     <AnimatePresence mode="wait">
       {eventDialog && <EventDialog key={eventDialog.id || 'new-event'} event={eventState.data.find((item) => item.id === eventDialog.id)} date={eventDialog.date} timeZone={eventDialog.timeZone} projects={projects} onClose={() => setEventDialog(null)} />}
-      {taskDialog && <TaskDialog key={taskDialog.id || 'new-task'} task={tasks.find((item) => item.id === taskDialog.id)} status={taskDialog.status} projects={projects} team={[]} onClose={() => setTaskDialog(null)} />}
+      {taskDialog && <TaskDialog draft={taskDialog.draft} key={taskDialog.id || 'new-task'} task={tasks.find((item) => item.id === taskDialog.id)} status={taskDialog.status} projects={projects} team={[]} onClose={() => setTaskDialog(null)} />}
       {renderModal()}
       {projectDialog && <ProjectDialog key={projectDialog.id || 'new-project'} mode={projectDialog.mode} project={projects.find((p) => p.id === projectDialog.id)} onClose={() => setProjectDialog(null)} onSave={saveProject} onDelete={deleteProject} />}
     </AnimatePresence>

@@ -16,9 +16,10 @@ import { countOpenTasks, dashboardInsights, nearestProjectDeadline, projectCreat
 import DailyNote from '../components/DailyNote'
 import useWorkspace from '../hooks/useWorkspace'
 import useAuth from '../hooks/useAuth'
+import GlassOrbit from '../components/GlassOrbit'
 
 function Dashboard({ projects, tasks, events, timeEntries, onEntry, onNavigate, onModal, onProject }) {
-  const { workspace, canManage } = useWorkspace()
+  const { canManage } = useWorkspace()
   const { user } = useAuth()
   const [activeDay, setActiveDay] = useState(6)
   const [filter, setFilter] = useState('All')
@@ -43,9 +44,19 @@ function Dashboard({ projects, tasks, events, timeEntries, onEntry, onNavigate, 
   const chooseFilter = (value) => { setFilter(value); setShowAll(true); document.getElementById('dashboard-projects')?.scrollIntoView({ behavior: reduced ? 'instant' : 'smooth', block: 'center' }) }
   return <section className="page-content" aria-label="Dashboard">
     <SectionTitle title="Dashboard" description="Your plans, your focus, your next little step." actions={canManage && <><button className="button button--primary" onClick={() => onModal('project')}><Plus size={17} /> Add Project</button><button className="button button--outline" onClick={() => onModal('import')}><Download size={16} /> Import Data</button></>} />
-    <div className="dashboard-welcome"><div><span className="eyebrow">MAKE TODAY YOURS</span><h2>{user ? `A fresh perspective, ${user.name.split(' ')[0]}.` : 'A little clarity for your day.'}</h2><p>Make space for the work that matters to you.</p></div><span className="welcome-leaf" aria-hidden="true">✦</span></div>
+    <motion.div className="dashboard-welcome" variants={cardEntrance} initial="hidden" animate="visible">
+      <div className="dashboard-welcome__copy">
+        <span className="hero-date"><span />{new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'long', day: 'numeric' }).format(now)}</span>
+        <span className="eyebrow">MAKE ROOM FOR WHAT MATTERS</span>
+        <h2>{user ? <>A little clarity,<br /><em>{user.name.split(' ')[0]}.</em></> : <>Your day.<br /><em>A fresh perspective.</em></>}</h2>
+        <p>A clear mind. A little momentum. Space to do your best work.</p>
+        <div className="hero-overview"><span><strong>{countOpenTasks(tasks)}</strong> open tasks</span><span><strong>{metrics.running}</strong> projects in progress</span></div>
+        <div className="hero-actions"><button className="button button--primary" onClick={() => onNavigate('tasks')}>Find your focus<ArrowUpRight size={17} /></button>{canManage && <button className="hero-secondary" onClick={() => onModal('task')}><Plus size={16} /> Create a task</button>}</div>
+      </div>
+      <GlassOrbit />
+    </motion.div>
     <motion.div variants={staggerCards} initial="hidden" animate="visible">
-      <div className="stats-grid">{stats.map((stat) => <motion.article key={stat.label} className={`stat-card ${stat.tone ? 'stat-card--sage' : ''}`} variants={cardEntrance} whileHover={reduced ? undefined : { y: -2 }}>
+      <div className="stats-grid">{stats.map((stat) => <motion.article key={stat.label} className={`stat-card ${stat.tone ? 'stat-card--sage' : ''}`} variants={cardEntrance} whileHover={reduced ? undefined : { y: -6, rotateX: 2, rotateY: -1 }} transition={{ type: 'spring', stiffness: 220, damping: 24 }}>
         <div className="stat-card__top"><h2>{stat.label}</h2><button className="round-link" aria-label={`Show ${stat.label.toLowerCase()}`} onClick={() => chooseFilter(stat.filter)}><ArrowUpRight size={17} /></button></div><AnimatedNumber className="stat-card__number" value={stat.value} /><p className="stat-card__caption">{stat.note}</p>
       </motion.article>)}</div>
       <div className="dashboard-grid">

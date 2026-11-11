@@ -1,0 +1,8 @@
+/* One ordered entry for the live application and its visual regression fixture.
+   Keep the refresh last; do not import shell styles from component modules. */
+@import '../index.css';
+@import '../App.css';
+@import './phase4.css';
+@import './refinement.css';
+@import './design-refresh.css';
+@import './voice.css';

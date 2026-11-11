@@ -4,7 +4,7 @@ import { X } from 'lucide-react'
 import { modalEntrance } from '../styles/motion'
 import { createPortal } from 'react-dom'
 
-export default function Modal({ title, onClose, children }) {
+export default function Modal({ title, description = 'Keep your team moving forward.', onClose, children }) {
   const dialog = useRef(null)
   const close = useRef(onClose)
   const titleId = useId()
@@ -30,7 +30,7 @@ export default function Modal({ title, onClose, children }) {
   }, [])
   return createPortal(<motion.div className="modal-backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
     <motion.section ref={dialog} tabIndex={-1} className="modal" role="dialog" aria-modal="true" aria-labelledby={titleId} variants={modalEntrance} initial="hidden" animate="visible" exit="exit">
-      <header className="modal__header"><div><h2 id={titleId}>{title}</h2><p>Keep your team moving forward.</p></div><button className="icon-btn" aria-label="Close dialog" onClick={onClose}><X size={18} /></button></header>{children}
+      <header className="modal__header"><div><h2 id={titleId}>{title}</h2><p>{description}</p></div><button className="icon-btn" aria-label="Close dialog" onClick={onClose}><X size={18} /></button></header>{children}
     </motion.section>
   </motion.div>, document.body)
 }

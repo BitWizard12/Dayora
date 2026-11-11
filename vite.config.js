@@ -15,7 +15,8 @@ export default defineConfig({
     const csp = deployment.headers.flatMap((entry) => entry.headers).find((header) => header.key === 'Content-Security-Policy').value
     if (origin && !csp.split(';').find((directive) => directive.trim().startsWith('connect-src '))?.trim().split(/\s+/).includes(origin)) throw new Error('API origin is missing from Vercel CSP. Run npm run deployment:configure before deploying.')
   } }],
-  server: { proxy: { '/api': 'http://127.0.0.1:3001' } },
+  // Refuse a second, silently incremented port that can leave a stale tab open.
+  server: { port: 5173, strictPort: true, proxy: { '/api': 'http://127.0.0.1:3001' } },
   preview: { proxy: { '/api': process.env.DAYORA_BROWSER_API_PORT === '3101' ? 'http://127.0.0.1:3101' : 'http://127.0.0.1:3001' } },
   build: {
     rolldownOptions: {

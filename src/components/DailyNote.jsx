@@ -20,7 +20,7 @@ export default function DailyNote() {
     if (!next) return inFlight.current
     pending.current = null
     if (alive.current) setStatus('Saving…')
-    inFlight.current = repo.save(next.date, next.note).then(() => { if (alive.current) { setStatus('Saved'); setError('') } }).catch((err) => { if (alive.current) { pending.current ||= next; setStatus('Not saved'); setError(err.message) } throw err })
+    inFlight.current = repo.save(next.date, next.note).then(() => { if (alive.current) { setStatus('Saved'); setError(''); setDraft(current => current?.date === next.date && current.note === next.note ? null : current) } }).catch((err) => { if (alive.current) { pending.current ||= next; setStatus('Not saved'); setError(err.message) } throw err })
     return inFlight.current
   }, [repo])
   const flushRef = useRef(flush)

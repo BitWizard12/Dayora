@@ -5,7 +5,7 @@ import { priorities, subtaskProgress, taskLabels } from '../services/tasks'
 import { assignedMemberIds } from '../services/team'
 import '../styles/tasks.css'
 import useWorkspace from '../hooks/useWorkspace'
-export default function TaskDialog({ task: current, projects, team = [], status = 'To do', onClose }) {
+export default function TaskDialog({ draft, task: current, projects, team = [], status = 'To do', onClose }) {
   const { workspace, members } = useWorkspace()
   const [initial] = useState(current)
   const task = current || initial
@@ -15,8 +15,8 @@ export default function TaskDialog({ task: current, projects, team = [], status 
   const [subtask, setSubtask] = useState('')
   const run = async (action, close = false) => { setBusy(true); setError(''); try { await action(); if (close) onClose() } catch (err) { setError(err.message) } finally { setBusy(false) } }
   return <Modal title={task ? 'Task details' : 'Create a task'} onClose={onClose}><form className="modal-form task-detail" onSubmit={(event) => { event.preventDefault(); const data = new FormData(event.currentTarget); const fields = { ...Object.fromEntries(data), assigneeIds: data.getAll('assigneeIds'), ...(workspace.type === 'team' ? { accountAssigneeIds: data.getAll('accountAssigneeIds') } : {}) }; run(() => repos.tasks.saveTask(fields, task?.id), true) }}>
-    <label>Task name<input name="title" defaultValue={task?.title || ''} required maxLength={200} data-initial-focus /></label>
-    <label>Description<textarea name="description" defaultValue={task?.description || ''} rows={3} placeholder="Add context or acceptance criteria" /></label>
+    <label>Task name<input name="title" defaultValue={task?.title || draft?.title || ''} required maxLength={200} data-initial-focus /></label>
+    <label>Description<textarea name="description" defaultValue={task?.description || draft?.description || ''} rows={3} placeholder="Add context or acceptance criteria" /></label>
     <div className="form-row"><label>Stage<select name="status" defaultValue={task?.status || status}>{Object.entries(taskLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label><label>Priority<select name="priority" defaultValue={task?.priority || 'Medium'}>{priorities.map((value) => <option key={value}>{value}</option>)}</select></label></div>
     <div className="form-row"><label>Deadline<input type="date" name="dueDate" defaultValue={task?.dueDate || ''} /></label><label>Project<select name="projectId" defaultValue={task?.projectId || ''}><option value="">No project</option>{task?.projectId && !projects.some((item) => item.id === task.projectId) && <option value={task.projectId}>Deleted project (choose another)</option>}{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label></div>
     <label>Team<select name="team" defaultValue={task?.team || 'Frontend'}>{['Frontend', 'Backend', 'Design', 'Marketing'].map((team) => <option key={team}>{team}</option>)}</select></label>
